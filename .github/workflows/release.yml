@@ -1,0 +1,97 @@
+name: Buat GitHub Release
+
+# Terpicu saat tag berformat v* di-push (mis. v0.1.0, v1.2.3) — lihat alur rilis di
+# CONTRIBUTING.md dan .claude/commands/release.md. Workflow build.yml (build APK debug per push
+# ke main) TETAP TERPISAH dari workflow ini — memisahkan "build tiap commit" dari "rilis resmi"
+# supaya build.yml tidak jadi lambat/rumit hanya karena logic pembuatan release.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # wajib untuk actions/create-release menulis ke Releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Jalankan unit test
+        run: npm test
+
+      - name: Build web assets
+        run: npm run build
+        env:
+          VITE_LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          VITE_LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+
+      - name: Siapkan folder android/ (buat kalau belum ada)
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+
+      - name: Terapkan overlay native Scrola
+        run: npm run native:overlay
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties') }}
+
+      - name: Pastikan gradlew bisa dieksekusi
+        working-directory: android
+        run: chmod +x ./gradlew
+
+      # CATATAN PENTING: build release APK butuh signing key (keystore). Sampai keystore disiapkan
+      # dan didaftarkan sebagai GitHub Secret (lihat docs/GITHUB_SETUP.md), workflow ini tetap
+      # memakai assembleDebug seperti build.yml — APK debug BUKAN untuk distribusi Play Store,
+      # tapi cukup untuk instalasi manual / testing oleh early adopter. Upgrade ke build release
+      # bertanda-tangan adalah langkah terpisah, jangan diam-diam dianggap "siap Play Store".
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Ekstrak nomor versi dari tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Buat GitHub Release + lampirkan APK
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Scrola ${{ github.ref_name }}"
+          # Isi body diambil dari docs/RELEASES.md secara manual saat ini (belum diparse otomatis
+          # per-versi) — tempel bagian versi terkait ke deskripsi rilis lewat GitHub UI setelah
+          # workflow ini jalan, atau kembangkan parsing otomatis di iterasi berikutnya.
+          body: |
+            Rilis otomatis dari tag ${{ github.ref_name }}.
+
+            **Sebelum menandai rilis ini "final"**, salin bagian yang sesuai dari
+            `docs/RELEASES.md` ke deskripsi ini (fitur, perbaikan, keterbatasan, status validasi).
+
+            APK debug terlampir di bawah — belum ditandatangani untuk Play Store, cukup untuk
+            instalasi manual. Butuh Android 6.0+.
+          draft: true # WAJIB tetap draft — jangan auto-publish tanpa ditinjau manusia dulu
+          prerelease: ${{ contains(github.ref_name, '-') }} # tag mis. v0.1.0-rc1 otomatis ditandai prerelease
+          files: android/app/build/outputs/apk/debug/*.apk

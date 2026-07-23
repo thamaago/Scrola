@@ -1,0 +1,42 @@
+{
+  "name": "scrola",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scrola \u2014 Every Song Leaves a Story. Scrobbler premium untuk Last.fm.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cap:sync": "cap sync android",
+    "cap:open": "cap open android",
+    "native:overlay": "node scripts/apply-native-overlay.cjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/browser": "^6.0.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/splash-screen": "^6.0.3",
+    "@capacitor-community/sqlite": "^6.0.2",
+    "md5": "^2.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@types/md5": "^2.3.5",
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.41",
+    "tailwindcss": "^3.4.10",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2",
+    "vitest": "^2.1.8"
+  }
+}

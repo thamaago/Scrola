@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Lingkup FileProvider sengaja DIPERSEMPIT ke satu subfolder cache saja (shared_images/),
+    bukan seluruh cache atau penyimpanan internal. Prinsipnya sama dengan izin: beri akses
+    sesempit yang benar-benar dibutuhkan. Dengan ini, aplikasi lain yang menerima URI kita
+    tidak punya jalan untuk menyentuh file lain milik Scrola (mis. database scrobble atau
+    file MP3 sementara dari editor metadata).
+-->
+<paths>
+    <cache-path name="shared_images" path="shared_images/" />
+</paths>

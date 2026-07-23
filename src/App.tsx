@@ -1,0 +1,163 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import LoginScreen from './screens/LoginScreen';
+import NowPlayingScreen from './screens/NowPlayingScreen';
+import HistoryScreen from './screens/HistoryScreen';
+import SettingsScreen from './screens/SettingsScreen';
+import SisiBScreen from './screens/SisiBScreen';
+import { loadSession } from './lib/secureStore';
+import { useNowPlayingListener } from './hooks/useNowPlaying';
+import { useScrobbleHistory } from './hooks/useScrobbleHistory';
+import { flushQueue } from './lib/scrobbleEngine';
+
+const TABS = [
+  ['now', 'Sekarang'],
+  ['history', 'Riwayat'],
+  ['settings', 'Atur'],
+] as const;
+
+type Tab = (typeof TABS)[number][0];
+
+export default function App() {
+  const [username, setUsername] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [tab, setTab] = useState<Tab>('now');
+  const [sisiBOpen, setSisiBOpen] = useState(false);
+  // id entri riwayat yang BARU tercatat — untuk border amber + animasi masuk di HistoryScreen.
+  const [freshScrobbleId, setFreshScrobbleId] = useState<number | null>(null);
+  const prevTopIdRef = useRef<number | null>(null);
+
+  const current = useNowPlayingListener();
+  const { items: historyItems, reload: reloadHistory, toggleLoved, deleteEntry, updateEntry } = useScrobbleHistory();
+
+  useEffect(() => {
+    loadSession()
+      .then((s) => {
+        setUsername(s?.username ?? null);
+      })
+      .catch((e) => {
+        // Kalau plugin native gagal (mis. error Keystore, atau preview web tanpa native),
+        // JANGAN biarkan app terjebak selamanya di layar blank — anggap saja belum login.
+        console.warn('Gagal memuat session tersimpan, arahkan ke layar login:', e);
+        setUsername(null);
+      })
+      .finally(() => {
+        setCheckingSession(false);
+      });
+  }, []);
+
+  // Coba kirim antrean scrobble yang mungkin tertunda setiap kali app dibuka/session siap.
+  useEffect(() => {
+    if (username) {
+      flushQueue()
+        .then(reloadHistory)
+        .catch((e) => console.warn('Gagal flush antrean scrobble saat startup:', e));
+    }
+  }, [username, reloadHistory]);
+
+  // Deteksi entri riwayat baru: kalau id teratas berubah setelah reload, tandai sebagai "fresh"
+  // sebentar (untuk border amber + animasi fadeSlideIn), lalu lepas tandanya.
+  useEffect(() => {
+    const topId = historyItems[0]?.id ?? null;
+    if (topId !== null && prevTopIdRef.current !== null && topId !== prevTopIdRef.current) {
+      setFreshScrobbleId(topId);
+      const t = setTimeout(() => setFreshScrobbleId(null), 2500);
+      prevTopIdRef.current = topId;
+      return () => clearTimeout(t);
+    }
+    prevTopIdRef.current = topId;
+  }, [historyItems]);
+
+  // Dipanggil NowPlayingScreen tepat saat ambang scrobble tercapai — muat ulang riwayat setelah
+  // jeda singkat supaya entri baru (yang ditulis pipeline scrobble secara async) ikut terbaca.
+  const handleScrobbled = useCallback(() => {
+    const t = setTimeout(() => reloadHistory(), 1200);
+    // Timer sekali jalan; tidak perlu disimpan — kalaupun komponen unmount, reloadHistory aman
+    // dipanggil (hanya baca DB + setState di hook yang sudah punya guard .catch).
+    void t;
+  }, [reloadHistory]);
+
+  if (checkingSession) {
+    return <div className="min-h-screen bg-ink" />;
+  }
+
+  if (!username) {
+    return <LoginScreen onAuthed={setUsername} />;
+  }
+
+  const activeIdx = TABS.findIndex(([t]) => t === tab);
+
+  return (
+    <div className="bg-ink min-h-screen relative overflow-hidden">
+      {/* Ketiga screen selalu ter-render, menumpuk absolut, dengan transisi slide + fade.
+          Arah slide mengikuti posisi tab: layar di kiri tab aktif keluar ke -40px, di kanan
+          ke +40px — memberi rasa arah spasial. pointer-events dimatikan pada layar nonaktif.
+
+          Catatan performa (dari handoff): kalau render 3 screen sekaligus ternyata berat di
+          WebView device nyata, fallback-nya render aktif + yang sedang keluar saja. Mulai dari
+          bentuk paling sederhana dulu; optimasi menunggu bukti dari pengujian device. */}
+      {TABS.map(([t], idx) => {
+        const isActive = t === tab;
+        const offset = idx < activeIdx ? -40 : idx > activeIdx ? 40 : 0;
+        return (
+          <div
+            key={t}
+            className="absolute inset-0 overflow-y-auto"
+            style={{
+              opacity: isActive ? 1 : 0,
+              transform: `translateX(${isActive ? 0 : offset}px)`,
+              transition: 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.22,1,0.36,1)',
+              pointerEvents: isActive ? 'auto' : 'none',
+            }}
+            aria-hidden={!isActive}
+          >
+            {t === 'now' && <NowPlayingScreen onScrobbled={handleScrobbled} current={current} />}
+            {t === 'history' && (
+              <HistoryScreen
+                items={historyItems}
+                freshId={freshScrobbleId}
+                onOpenSisiB={() => setSisiBOpen(true)}
+                onToggleLoved={(entry) => void toggleLoved(entry)}
+                onDeleteEntry={(entry) => void deleteEntry(entry)}
+                onUpdateEntry={(entry, fields) => void updateEntry(entry, fields)}
+                onNoteSaved={() => void reloadHistory()}
+              />
+            )}
+            {t === 'settings' && (
+              <SettingsScreen
+                username={username}
+                current={current}
+                onLoggedOut={() => setUsername(null)}
+              />
+            )}
+          </div>
+        );
+      })}
+
+      {/* Overlay Sisi B — slide-up di atas segalanya termasuk nav */}
+      <SisiBScreen open={sisiBOpen} onClose={() => setSisiBOpen(false)} />
+
+      <nav className="fixed bottom-0 inset-x-0 bg-surface border-t border-white/5 flex z-10">
+        {TABS.map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="flex-1 py-3.5 text-sm font-body"
+            style={{ color: tab === t ? '#D6A756' : '#8FA394', transition: 'color 0.25s ease' }}
+          >
+            {label}
+          </button>
+        ))}
+        {/* Indikator garis atas — meluncur mengikuti tab aktif */}
+        <div
+          className="absolute top-0 h-0.5 bg-amber"
+          style={{
+            width: '33.333%',
+            left: `${activeIdx * 33.333}%`,
+            transition: 'left 0.35s cubic-bezier(0.22,1,0.36,1)',
+          }}
+          aria-hidden="true"
+        />
+      </nav>
+    </div>
+  );
+}

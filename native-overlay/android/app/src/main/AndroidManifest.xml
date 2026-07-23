@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.scrola.app">
+
+    <!-- Hanya izin yang benar-benar dipakai -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- mediaPlayback: untuk PlaybackService (player internal yang benar-benar memutar audio) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- dataSync: untuk ScrobbleForegroundService (mendeteksi & MENGIRIM scrobble ke Last.fm,
+         tidak memutar media apa pun). Sebelumnya memakai mediaPlayback yang tidak jujur secara
+         fungsi dan berisiko ditolak review Play Store di Android 14+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application
+        android:name=".ScrolaApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:debuggable="false"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/AppTheme.NoActionBarLaunch"
+        android:largeHeap="false"
+        android:extractNativeLibs="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Deep link callback untuk Last.fm web auth (opsional, jika memakai custom scheme) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="scrola" android:host="auth-callback" />
+            </intent-filter>
+        </activity>
+
+        <!-- Listener now-playing dari app musik lain.
+             PENTING: exported HARUS "true" — NotificationListenerService di-bind oleh system_server
+             (proses sistem Android), bukan oleh app biasa. Dengan exported="false", sistem tidak
+             bisa mem-bind service ini di sebagian versi Android dan deteksi musik gagal total.
+             Keamanannya dijaga oleh android:permission BIND_NOTIFICATION_LISTENER_SERVICE yang
+             bersifat signature|system — hanya sistem yang memilikinya, app pihak ketiga tidak bisa
+             memanggil service ini meski exported="true". -->
+        <service
+            android:name=".ScrolaNotificationListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- Foreground service untuk notifikasi Now Playing + antrean scrobble offline -->
+        <service
+            android:name=".ScrobbleForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Player musik internal (ExoPlayer dibungkus MediaSessionService). Session ini akan
+             muncul juga di MediaSessionManager.getActiveSessions() milik ScrolaNotificationListener,
+             menyatukan pipeline scrobble untuk sumber internal maupun eksternal. -->
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- FileProvider: memberi izin baca SEMENTARA & TERBATAS ke app tujuan saat berbagi
+             gambar tiket (WhatsApp Status, IG Story, dll). exported="false" + grantUriPermissions
+             adalah kombinasi yang benar: provider tidak bisa diakses sembarang app, hanya app yang
+             kita beri URI lewat Intent yang mendapat izin baca, dan hanya untuk file itu saja.
+             Lingkup path dipersempit di res/xml/file_paths.xml. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+</manifest>

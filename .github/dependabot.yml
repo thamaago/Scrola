@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # Dependency npm (React, Capacitor, dsb)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    # Grup update Capacitor jadi satu PR, bukan berkeping-keping — lebih mudah direview dan
+    # cocok dengan prinsip "ringan": versi Capacitor saling terkait, harus naik bersamaan.
+    groups:
+      capacitor:
+        patterns:
+          - "@capacitor/*"
+          - "@capacitor-community/*"
+
+  # Dependency Gradle (Android/Kotlin) — hanya aktif setelah folder android/ ada & ter-commit.
+  # Dependabot otomatis skip kalau file gradle tidak ditemukan, jadi aman didaftarkan dari awal.
+  - package-ecosystem: "gradle"
+    directory: "/android"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "android"
+
+  # GitHub Actions itu sendiri (actions/checkout, setup-node, dst) — sering luput diupdate padahal
+  # menyangkut keamanan supply-chain CI.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "ci"

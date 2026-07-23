@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scrola</string>
+    <string name="notification_channel_now_playing_name">Sedang Diputar</string>
+    <string name="notification_channel_now_playing_desc">Status lagu yang sedang terdeteksi oleh Scrola</string>
+    <string name="notification_now_playing_idle">Menunggu musik diputar…</string>
+</resources>

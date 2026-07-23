@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Kebalikan dari temuan F-02 di audit Last.fm resmi:
+  - cleartextTrafficPermitted="false" (default aman, tidak perlu ditulis eksplisit tapi kita
+    tegaskan untuk kejelasan)
+  - trust-anchors HANYA system CA, TIDAK menyertakan src="user"
+  Debug override HANYA aktif di build debug (untuk keperluan proxy Charles/mitmproxy saat dev),
+  tidak pernah masuk ke build release.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
+</network-security-config>

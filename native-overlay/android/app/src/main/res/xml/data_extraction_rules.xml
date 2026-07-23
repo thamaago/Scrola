@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Kebalikan dari temuan F-05: kita eksplisit MENGECUALIKAN SharedPreferences yang menyimpan
+  session key terenkripsi dari cloud backup & device transfer, walau nilainya sendiri sudah
+  terenkripsi AES-256-GCM (defense in depth).
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="scrola_secure_prefs.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="scrola_secure_prefs.xml" />
+    </device-transfer>
+</data-extraction-rules>

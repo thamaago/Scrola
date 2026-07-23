@@ -1,0 +1,14 @@
+# CODEOWNERS — menentukan siapa otomatis diminta review saat PR menyentuh berkas tertentu.
+# Ganti @username di bawah dengan username GitHub-mu sebelum push.
+# Dokumentasi: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: semua berkas
+* @yudha
+
+# Native Android — butuh perhatian ekstra (keamanan, lifecycle)
+/native-overlay/ @yudha
+
+# Konfigurasi keamanan & CI — perubahan di sini wajib direview cermat
+/.github/ @yudha
+/native-overlay/android/app/src/main/AndroidManifest.xml @yudha
+/native-overlay/android/app/src/main/res/xml/ @yudha

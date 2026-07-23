@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink text-paper font-body;
+  background-image: radial-gradient(circle at 1px 1px, rgba(239,237,224,0.035) 1px, transparent 0);
+  background-size: 18px 18px;
+}
+
+/* Tepi perforasi tiket — signature element Scrola */
+.ticket-perforation {
+  background-image: radial-gradient(circle, #121A15 3px, transparent 3.5px);
+  background-size: 100% 14px;
+  background-position: left top;
+  width: 14px;
+}
+
+/* Varian lebih besar dipakai di tiket "hero" (Login) & "Backstage Pass" (Settings) */
+.ticket-perforation-lg {
+  background-image: radial-gradient(circle, #121A15 3.5px, transparent 4px);
+  background-size: 100% 16px;
+  background-position: left top;
+  width: 16px;
+}
+
+/* Disc album art player internal — muter seperti vinyl selagi playing */
+@keyframes disc-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-disc-spin {
+  animation: disc-spin 9s linear infinite;
+}
+
+/* Efek fade-in kartu StoryTicket saat variant="printing" (baru "dicetak") */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Entri Riwayat baru masuk dari atas — dipicu saat scrobble baru tercatat */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-slide-in {
+  animation: fadeSlideIn 0.5s cubic-bezier(0.22,1,0.36,1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

@@ -1,0 +1,39 @@
+                    GNU GENERAL PUBLIC LICENSE
+                       Version 3, 29 June 2007
+
+ Copyright (C) 2026 Yudha (pengembang Scrola)
+
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+--------------------------------------------------------------------------
+
+CATATAN: File ini memuat ringkasan header GPL-3.0. Teks LISENSI LENGKAP GPL-3.0
+(wajib disertakan untuk kepatuhan) harus disalin utuh dari sumber resmi:
+
+    https://www.gnu.org/licenses/gpl-3.0.txt
+
+Saat menyiapkan repo di komputer, jalankan sekali:
+
+    curl -sL https://www.gnu.org/licenses/gpl-3.0.txt -o LICENSE
+
+untuk mengganti file ini dengan teks lisensi lengkap yang sah secara hukum.
+(Environment pembuatan scaffold ini tanpa akses jaringan, jadi teks penuh belum
+bisa diunduh otomatis di sini.)
+
+Kalau kamu memilih lisensi lain (mis. MIT untuk adopsi lebih longgar), ganti
+seluruh isi file ini dengan teks lisensi tersebut, dan sesuaikan bagian "Lisensi"
+di README.md serta header SPDX di kode bila ada.
