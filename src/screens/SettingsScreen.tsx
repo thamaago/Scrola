@@ -29,6 +29,17 @@ export default function SettingsScreen({
     oldestTimestamp: number | null;
   } | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [listenerDiag, setListenerDiag] = useState<{
+    granted: boolean;
+    connected: boolean;
+    connectedAtMs: number;
+    lastEventAtMs: number;
+    lastEventPackage: string;
+    totalEvents: number;
+    activeSessions: number;
+    androidSdk: number;
+    manufacturer: string;
+  } | null>(null);
 
   useEffect(() => {
     Diagnostics.getLastCrashLog()
@@ -38,6 +49,7 @@ export default function SettingsScreen({
       });
     getExternalScrobbleEnabled().then(setExternalOn).catch(() => {});
     refreshQueueStatus();
+    refreshListenerDiag();
     getAccountStats()
       .then(setAccountStats)
       .catch((e) => {
@@ -69,6 +81,15 @@ export default function SettingsScreen({
     }
   }
 
+  function refreshListenerDiag() {
+    NowPlaying.getListenerDiagnostics()
+      .then(setListenerDiag)
+      .catch((e) => {
+        // Plugin versi lama tidak punya method ini — jangan jatuhkan layar Pengaturan.
+        console.warn('Gagal membaca diagnosis listener:', e);
+      });
+  }
+
   function refreshQueueStatus() {
     getQueueStatus()
       .then(setQueueStatus)
@@ -87,6 +108,7 @@ export default function SettingsScreen({
     } finally {
       setRetrying(false);
       refreshQueueStatus();
+    refreshListenerDiag();
     }
   }
 
@@ -238,6 +260,82 @@ export default function SettingsScreen({
         </div>
       </section>
 
+      {/* ===== Diagnosis Deteksi Musik ===== */}
+      <section className="mb-6">
+        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
+          Diagnosis Deteksi Musik
+        </p>
+        <div className="bg-surface rounded-[10px] py-3.5 px-4">
+          {listenerDiag === null ? (
+            <p className="text-muted text-sm">Memeriksa…</p>
+          ) : (
+            <>
+              {/* Tiga lapis, ditampilkan berurutan — lapis pertama yang gagal adalah akar
+                  masalahnya, jadi pengguna tidak perlu menebak harus memperbaiki yang mana. */}
+              <DiagRow ok={listenerDiag.granted} label="Izin akses notifikasi" />
+              <DiagRow ok={listenerDiag.connected} label="Layanan pemantau hidup" />
+              <DiagRow
+                ok={listenerDiag.totalEvents > 0}
+                label={`Kabar dari app musik (${listenerDiag.totalEvents}×)`}
+              />
+
+              {listenerDiag.lastEventPackage && (
+                <p className="font-mono text-[11px] text-muted mt-2.5 truncate">
+                  terakhir: {sourceLabel(listenerDiag.lastEventPackage)}
+                  {listenerDiag.lastEventAtMs > 0 &&
+                    ` · ${Math.round((Date.now() - listenerDiag.lastEventAtMs) / 1000)} detik lalu`}
+                </p>
+              )}
+
+              {/* Saran perbaikan SPESIFIK untuk lapis pertama yang gagal */}
+              {!listenerDiag.granted && (
+                <p className="text-coral text-xs mt-3 leading-relaxed">
+                  Aktifkan <span className="text-paper">Akses notifikasi</span> di atas.
+                </p>
+              )}
+
+              {listenerDiag.granted && !listenerDiag.connected && (
+                <div className="mt-3 pt-3 border-t border-white/5">
+                  <p className="text-coral text-xs leading-relaxed mb-2">
+                    Izin tercentang tapi layanan tidak hidup. Dua penyebab tersering:
+                  </p>
+                  {listenerDiag.androidSdk >= 33 && (
+                    <p className="text-muted text-xs leading-relaxed mb-2">
+                      <span className="text-paper">1. Android {'>'}= 13 memblokir aplikasi
+                      sideload.</span> Buka Setelan → Aplikasi → Scrola → menu 3 titik →{' '}
+                      <span className="text-paper">Izinkan setelan yang dibatasi</span>, lalu
+                      aktifkan ulang akses notifikasi.
+                    </p>
+                  )}
+                  <p className="text-muted text-xs leading-relaxed">
+                    <span className="text-paper">
+                      2. {listenerDiag.manufacturer || 'Perangkat'} membatasi aplikasi latar.
+                    </span>{' '}
+                    Cari <span className="text-paper">"Aplikasi tak pernah tidur"</span> di setelan
+                    sistem dan tambahkan Scrola ke daftarnya.
+                  </p>
+                </div>
+              )}
+
+              {listenerDiag.connected && listenerDiag.totalEvents === 0 && (
+                <p className="text-muted text-xs mt-3 leading-relaxed">
+                  Layanan hidup tapi belum ada aplikasi musik yang melapor. Coba putar lagu, lalu
+                  buka layar ini lagi. Kalau tetap nol, aplikasi musiknya mungkin tidak melaporkan
+                  MediaSession ke sistem.
+                </p>
+              )}
+
+              <button
+                onClick={refreshListenerDiag}
+                className="mt-3 text-amber text-xs font-mono underline underline-offset-4"
+              >
+                periksa ulang
+              </button>
+            </>
+          )}
+        </div>
+      </section>
+
       {/* ===== Antrean Scrobble — panel diagnosis ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
@@ -340,6 +438,26 @@ export default function SettingsScreen({
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+/**
+ * Satu baris diagnosis: centang hijau / silang koral + label.
+ * Dipisah jadi komponen kecil supaya tiga lapis pemeriksaan tampil konsisten dan mudah ditambah.
+ */
+function DiagRow({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className="flex items-center gap-2.5 py-1">
+      <span
+        className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${
+          ok ? 'bg-amber text-ink' : 'bg-coral/20 text-coral'
+        }`}
+        aria-hidden="true"
+      >
+        {ok ? '✓' : '✕'}
+      </span>
+      <span className={`text-[13px] ${ok ? 'text-paper' : 'text-muted'}`}>{label}</span>
     </div>
   );
 }

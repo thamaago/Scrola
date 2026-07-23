@@ -56,6 +56,39 @@ class NowPlayingPlugin : Plugin() {
         }
     }
 
+    /**
+     * Diagnosis BERLAPIS akses notifikasi. Memeriksa setelan izin saja tidak cukup untuk
+     * menjelaskan kenapa scrobble tidak jalan — tiga lapis di bawah ini memisahkan tiga penyebab
+     * yang dari luar tampak identik:
+     *   granted=false            -> izin memang belum diberikan
+     *   granted=true, connected=false -> izin tercentang tapi service tidak pernah hidup
+     *                                    (Android 13+ memblokir sideload sampai "Allow restricted
+     *                                    settings" ditekan; atau produsen membunuh proses latar)
+     *   connected=true, totalEvents=0 -> service hidup tapi tak ada aplikasi musik yang melapor
+     */
+    @PluginMethod
+    fun getListenerDiagnostics(call: PluginCall) {
+        val enabledListeners = android.provider.Settings.Secure.getString(
+            context.contentResolver, "enabled_notification_listeners"
+        ) ?: ""
+        val ourComponent = android.content.ComponentName(context, ScrolaNotificationListener::class.java)
+        val granted = enabledListeners.split(':').any { entry ->
+            entry == ourComponent.flattenToString() || entry == ourComponent.flattenToShortString()
+        }
+
+        val result = JSObject()
+        result.put("granted", granted)
+        result.put("connected", ScrolaNotificationListener.isConnected)
+        result.put("connectedAtMs", ScrolaNotificationListener.connectedAtMs)
+        result.put("lastEventAtMs", ScrolaNotificationListener.lastEventAtMs)
+        result.put("lastEventPackage", ScrolaNotificationListener.lastEventPackage ?: "")
+        result.put("totalEvents", ScrolaNotificationListener.totalEvents)
+        result.put("activeSessions", ScrolaNotificationListener.activeSessionCount)
+        result.put("androidSdk", android.os.Build.VERSION.SDK_INT)
+        result.put("manufacturer", android.os.Build.MANUFACTURER)
+        call.resolve(result)
+    }
+
     @PluginMethod
     fun isNotificationAccessGranted(call: PluginCall) {
         val enabledListeners = android.provider.Settings.Secure.getString(

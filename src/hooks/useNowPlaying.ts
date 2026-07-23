@@ -7,6 +7,18 @@ import { getExternalScrobbleEnabled } from '../lib/preferences';
 export interface NowPlayingPluginInterface {
   openNotificationAccessSettings(): Promise<void>;
   isNotificationAccessGranted(): Promise<{ granted: boolean }>;
+  /** Diagnosis berlapis: izin vs service hidup vs data mengalir. */
+  getListenerDiagnostics(): Promise<{
+    granted: boolean;
+    connected: boolean;
+    connectedAtMs: number;
+    lastEventAtMs: number;
+    lastEventPackage: string;
+    totalEvents: number;
+    activeSessions: number;
+    androidSdk: number;
+    manufacturer: string;
+  }>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
   addListener(
     eventName: 'nowPlayingChanged' | 'playbackStateChanged',

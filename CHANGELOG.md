@@ -17,6 +17,35 @@ tooling).
 
 ## [Unreleased]
 
+### Added — Diagnosis deteksi musik BERLAPIS (hasil riset arsitektur Pano Scrobbler)
+- **Temuan riset:** Pano Scrobbler memakai pendekatan yang SAMA dengan Scrola —
+  `NotificationListenerService` + `MediaSessionManager` (dikonfirmasi dari kebijakan privasi &
+  nama komponen `com.arn.scrobble.media.NLService`). Jadi arsitektur deteksi Scrola tidak salah.
+  Yang berbeda: FAQ mereka menempatkan DUA hambatan tingkat-perangkat sebagai pertanyaan nomor
+  satu dan dua — bukan bug kode:
+  1. **Android 13+ memblokir akses notifikasi untuk aplikasi sideload.** Pengguna harus menekan
+     "Allow restricted settings" di App info dulu; sebelum itu izin tidak pernah benar-benar
+     berlaku. Scrola dipasang lewat APK dari GitHub, jadi persis terkena aturan ini.
+  2. **Samsung/Xiaomi/Huawei membunuh proses latar secara agresif.** Solusi Samsung: tambahkan
+     app ke "Aplikasi tak pernah tidur".
+- **Celah diagnostik yang ditemukan:** `isNotificationAccessGranted()` hanya memeriksa SETELAN
+  `enabled_notification_listeners`. Setelan bisa menyatakan izin diberikan sementara service tidak
+  pernah tersambung — persis yang terjadi pada kedua kasus di atas. Akibatnya kegagalan scrobble
+  mustahil didiagnosis: semuanya tampak "sudah diizinkan".
+- **`getListenerDiagnostics()` baru** memisahkan tiga lapis yang dari luar identik: (a) izin
+  diberikan, (b) layanan pemantau benar-benar hidup (`onListenerConnected` pernah menyala),
+  (c) data benar-benar mengalir (`totalEvents > 0`, dengan package & waktu event terakhir).
+  `ScrolaNotificationListener` kini mencatat status koneksi, jumlah event, sumber terakhir, dan
+  jumlah sesi aktif.
+- **Panel "Diagnosis Deteksi Musik" di Pengaturan** menampilkan ketiga lapis berurutan, dan
+  memberi saran perbaikan SPESIFIK untuk lapis pertama yang gagal — termasuk instruksi "Izinkan
+  setelan yang dibatasi" yang hanya muncul di Android 13+, dan nama produsen perangkat pada saran
+  "Aplikasi tak pernah tidur".
+- Catatan: perbedaan arsitektur yang tersisa (logika scrobble Scrola berjalan di JS/WebView,
+  sedangkan Pano murni native) BELUM disentuh. Kalau setelah dua hambatan perangkat di atas
+  diselesaikan ternyata deteksi mengalir tapi scrobble tetap tidak tercatat saat app di latar,
+  barulah pemindahan logika ke lapisan native terbukti perlu.
+
 ### Added — Catatan pribadi 140 karakter pada tiket
 - Pengguna bisa menulis catatan singkat pada lagu yang sedang diputar (layar Sekarang) maupun
   pada tiket mana pun di Riwayat. Catatan tampil menempel di bawah tiket dengan gaya berbeda

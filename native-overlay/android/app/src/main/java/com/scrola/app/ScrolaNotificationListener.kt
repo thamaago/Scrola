@@ -25,6 +25,52 @@ import org.json.JSONObject
  */
 class ScrolaNotificationListener : NotificationListenerService() {
 
+    /**
+     * Status hidup listener, untuk diagnosis.
+     *
+     * KENAPA PERLU: memeriksa setelan "enabled_notification_listeners" saja TIDAK CUKUP. Setelan
+     * bisa menyatakan izin diberikan sementara service-nya tidak pernah benar-benar tersambung —
+     * dua penyebab nyata yang terdokumentasi:
+     *  1. Android 13+ memblokir akses notifikasi untuk aplikasi yang dipasang di luar app store
+     *     (sideload). Pengguna harus membuka App info > menu 3 titik > "Allow restricted settings"
+     *     lebih dulu; tanpa itu izin tidak pernah benar-benar berlaku.
+     *  2. Sebagian produsen (Samsung, Xiaomi, Huawei) mematikan proses aplikasi latar secara
+     *     agresif, sehingga service dibunuh diam-diam setelah beberapa saat.
+     *
+     * Tanpa membedakan "izin tercentang" dari "service hidup" dan "data mengalir", kegagalan
+     * scrobble tidak bisa didiagnosis sama sekali — persis kebuntuan yang kita alami.
+     */
+    companion object {
+        @Volatile var isConnected: Boolean = false
+            private set
+        @Volatile var connectedAtMs: Long = 0L
+            private set
+        @Volatile var lastEventAtMs: Long = 0L
+            private set
+        @Volatile var lastEventPackage: String? = null
+            private set
+        @Volatile var totalEvents: Int = 0
+            private set
+        @Volatile var activeSessionCount: Int = 0
+            private set
+
+        /** Dipanggil setiap kali ada kabar dari aplikasi musik — penanda data BENAR-BENAR mengalir. */
+        fun noteEvent(packageName: String?) {
+            lastEventAtMs = System.currentTimeMillis()
+            lastEventPackage = packageName
+            totalEvents++
+        }
+
+        fun noteConnected(connected: Boolean) {
+            isConnected = connected
+            if (connected) connectedAtMs = System.currentTimeMillis()
+        }
+
+        fun noteSessions(count: Int) {
+            activeSessionCount = count
+        }
+    }
+
     private var mediaSessionManager: MediaSessionManager? = null
     private val activeCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
 
@@ -34,6 +80,7 @@ class ScrolaNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        noteConnected(true)
         mediaSessionManager = getSystemService(MediaSessionManager::class.java)
         val componentName = ComponentName(this, ScrolaNotificationListener::class.java)
         try {
@@ -55,6 +102,7 @@ class ScrolaNotificationListener : NotificationListenerService() {
     // Sebelumnya tidak ditangani sama sekali, jadi activeCallbacks & listener MediaSessionManager
     // tetap "menggantung" mereferensikan API yang aksesnya sudah dicabut sistem.
     override fun onListenerDisconnected() {
+        noteConnected(false)
         cleanupAllCallbacks()
         super.onListenerDisconnected()
     }
@@ -67,6 +115,7 @@ class ScrolaNotificationListener : NotificationListenerService() {
     }
 
     private fun rebindControllers(controllers: List<MediaController>) {
+        noteSessions(controllers.size)
         // Lepas callback lama agar tidak leak
         activeCallbacks.forEach { (controller, cb) -> controller.unregisterCallback(cb) }
         activeCallbacks.clear()
@@ -114,6 +163,7 @@ class ScrolaNotificationListener : NotificationListenerService() {
             put("album", metadata.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM) ?: "")
             put("durationMs", metadata.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION))
         }
+        noteEvent(controller.packageName)
         NowPlayingPlugin.emit("nowPlayingChanged", payload)
 
         if (title.isNotEmpty()) {
@@ -139,6 +189,7 @@ class ScrolaNotificationListener : NotificationListenerService() {
             put("state", state.state) // PlaybackState.STATE_PLAYING dst.
             put("positionMs", state.position)
         }
+        noteEvent(controller.packageName)
         NowPlayingPlugin.emit("playbackStateChanged", payload)
 
         val isPlaying = state.state == PlaybackState.STATE_PLAYING
