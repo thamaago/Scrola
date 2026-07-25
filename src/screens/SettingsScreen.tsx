@@ -29,6 +29,7 @@ export default function SettingsScreen({
     oldestTimestamp: number | null;
   } | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [eventLog, setEventLog] = useState<string | null>(null);
   const [listenerDiag, setListenerDiag] = useState<{
     granted: boolean;
     connected: boolean;
@@ -79,6 +80,15 @@ export default function SettingsScreen({
       console.warn('Gagal mengecek status izin notifikasi:', e);
       setNotifGranted(false);
     }
+  }
+
+  function refreshEventLog() {
+    Diagnostics.readEventLog()
+      .then((r) => setEventLog(r.log))
+      .catch((e) => {
+        console.warn('Gagal membaca log peristiwa:', e);
+        setEventLog('(gagal membaca log)');
+      });
   }
 
   function refreshListenerDiag() {
@@ -384,6 +394,40 @@ export default function SettingsScreen({
                 {queueStatus.lastError}
               </p>
             </div>
+          )}
+        </div>
+      </section>
+
+      {/* ===== Log Peristiwa (diagnosis mendalam) ===== */}
+      <section className="mb-6">
+        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
+          Log Peristiwa Scrobble
+        </p>
+        <div className="bg-surface rounded-[10px] py-3.5 px-4">
+          <p className="text-muted text-xs mb-3 leading-relaxed">
+            Jejak mentah apa yang terjadi saat lagu memenuhi syarat — untuk menemukan di titik mana
+            pencatatan berhenti. Putar lagu sampai lewat separuh, lalu tekan muat.
+          </p>
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={refreshEventLog}
+              className="bg-amber text-ink text-xs font-semibold rounded-md py-2 px-3"
+            >
+              Muat log
+            </button>
+            <button
+              onClick={() => {
+                Diagnostics.clearEventLog().then(() => setEventLog(''));
+              }}
+              className="border border-white/10 text-muted text-xs rounded-md py-2 px-3"
+            >
+              Bersihkan
+            </button>
+          </div>
+          {eventLog !== null && (
+            <pre className="bg-ink rounded-lg p-3 text-[11px] text-muted font-mono whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+              {eventLog || '(kosong — belum ada peristiwa terekam)'}
+            </pre>
           )}
         </div>
       </section>

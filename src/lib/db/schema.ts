@@ -1,3 +1,4 @@
+import type { SQLiteDBConnection } from '@capacitor-community/sqlite';
 /**
  * schema.ts
  * Migrasi database bernomor untuk Scrola — pola sama dengan Strongbox
@@ -10,7 +11,10 @@
 
 export interface Migration {
   version: number;
-  statements: string[];
+  /** Daftar statement SQL statis. Pakai ini untuk migrasi sederhana. */
+  statements?: string[];
+  /** Fungsi migrasi yang bisa memeriksa kondisi DB dulu (untuk idempotensi). */
+  statementsFn?: (db: SQLiteDBConnection) => Promise<void>;
 }
 
 export const MIGRATIONS: Migration[] = [
@@ -48,16 +52,17 @@ export const MIGRATIONS: Migration[] = [
   },
   {
     version: 2,
-    statements: [
-      // Catatan pribadi per PEMUTARAN (bukan per lagu) — memutar lagu yang sama dua kali
-      // menghasilkan dua tiket dengan cerita masing-masing, sesuai metafora tiket Scrola.
-      //
-      // PENTING: kolom ini SENGAJA tidak ditambahkan ke CREATE TABLE di v1. Kalau ditambahkan di
-      // sana JUGA, instalasi baru akan membuat kolomnya di v1 lalu v2 gagal dengan "duplicate
-      // column name" — karena ALTER TABLE tidak punya IF NOT EXISTS. Migrasi harus menceritakan
-      // sejarah apa adanya, bukan keadaan akhir yang diinginkan.
-      `ALTER TABLE scrobble_history ADD COLUMN note TEXT;`,
-    ],
+    // Ditulis sebagai fungsi supaya bisa memeriksa dulu apakah kolom sudah ada — melindungi dari
+    // database yang terlanjur setengah-termigrasi oleh versi buggy sebelumnya (PRAGMA user_version
+    // di dalam transaksi yang diabaikan, sehingga v2 pernah jalan tapi versi tak naik). Tanpa
+    // pengecekan ini, ALTER akan gagal "duplicate column name" dan mengunci seluruh DB.
+    statementsFn: async (db: SQLiteDBConnection) => {
+      const info = await db.query(`PRAGMA table_info(scrobble_history);`);
+      const hasNote = (info.values ?? []).some((col: any) => col.name === 'note');
+      if (!hasNote) {
+        await db.execute(`ALTER TABLE scrobble_history ADD COLUMN note TEXT;`);
+      }
+    },
   },
 ];
 

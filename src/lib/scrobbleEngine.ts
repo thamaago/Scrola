@@ -14,6 +14,7 @@ import { loadSession } from './secureStore';
 import { scrobbleBatch, updateNowPlaying, type TrackInfo } from './lastfm';
 import { parseScrobbleResponse, isScrobbleEligible } from './scrobbleLogic';
 import { flushPendingNotes } from './pendingNotes';
+import { diag } from './diagnostics';
 import {
   addToQueue,
   getQueueBatch,
@@ -37,7 +38,14 @@ let isFlushing = false;
 
 export async function enqueueScrobble(track: TrackInfo, sourcePackage?: string) {
   const timestamp = track.timestamp ?? Math.floor(Date.now() / 1000);
-  await addToQueue({ ...track, timestamp });
+  diag(`enqueue MASUK: ${track.artist} - ${track.track} (src=${sourcePackage ?? '?'})`);
+  try {
+    await addToQueue({ ...track, timestamp });
+    diag(`addToQueue OK`);
+  } catch (e) {
+    diag(`addToQueue GAGAL: ${(e as Error).message}`);
+    throw e;
+  }
   await flushQueue(sourcePackage);
 }
 
@@ -57,9 +65,14 @@ async function flushQueueOnce(sourcePackage?: string) {
     session = await loadSession();
   } catch (e) {
     console.warn('Gagal membaca session tersimpan, tunda pengiriman antrean:', e);
+    diag(`flush BERHENTI: gagal baca sesi - ${(e as Error).message}`);
     return;
   }
-  if (!session) return; // belum login, biarkan di antrean sampai user connect
+  if (!session) {
+    diag(`flush BERHENTI: sesi NULL (belum login?) — scrobble tertahan di antrean`);
+    return; // belum login, biarkan di antrean sampai user connect
+  }
+  diag(`flush: sesi OK, mulai kirim batch`);
 
   // Loop alih-alih rekursi: antrean offline yang menumpuk lama bisa berisi ratusan track,
   // dan memanggil flushQueueOnce secara rekursif per-batch berisiko menumpuk call stack dalam.
@@ -88,6 +101,7 @@ async function flushQueueOnce(sourcePackage?: string) {
     }
 
     try {
+      diag(`scrobbleBatch KIRIM: ${batch.length} track ke Last.fm`);
       const response = await scrobbleBatch(
         session.sk,
         batch.map((row) => ({
@@ -99,8 +113,10 @@ async function flushQueueOnce(sourcePackage?: string) {
           timestamp: row.timestamp,
         }))
       );
+      diag(`scrobbleBatch BALASAN diterima`);
 
       const { ignoredIndexes } = parseScrobbleResponse(response, batch.length);
+      diag(`Last.fm terima ${batch.length - ignoredIndexes.size}/${batch.length}, ditolak ${ignoredIndexes.size}`);
 
       // PENTING soal urutan & duplikasi: kita HAPUS dari antrean DULU, baru tulis ke history.
       // Kalau removeFromQueue berhasil tapi addHistoryBatch gagal, akibatnya "kehilangan" entri
@@ -126,6 +142,7 @@ async function flushQueueOnce(sourcePackage?: string) {
               sourcePackage,
             }))
           );
+          diag(`addHistoryBatch OK: ${acceptedRows.length} baris ditulis ke Riwayat`);
           // Baris riwayat baru saja ada — inilah saat yang PASTI untuk menempelkan catatan yang
           // ditulis pengguna sebelum lagunya tercatat. Deterministik, bukan menebak lewat timer.
           try {
@@ -138,6 +155,7 @@ async function flushQueueOnce(sourcePackage?: string) {
           // menyimpan salinan history lokal tidak fatal (riwayat di app kurang lengkap, tapi
           // scrobble-nya sendiri sudah tercatat di Last.fm). Jangan lempar — lanjutkan.
           console.warn('Scrobble terkirim tapi gagal menyimpan ke history lokal:', e);
+          diag(`addHistoryBatch GAGAL: ${(e as Error).message} — INI kenapa Riwayat kosong!`);
         }
       }
       if (ignoredIndexes.size > 0) {

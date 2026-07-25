@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { registerPlugin } from '@capacitor/core';
 import { notifyNowPlaying, enqueueScrobble } from '../lib/scrobbleEngine';
+import { diag } from '../lib/diagnostics';
 import {
   createTracker,
   applyEvent,
@@ -171,14 +172,16 @@ export function useNowPlayingListener() {
 
       scrobbleTimerRef.current = setTimeout(() => {
         scrobbleTimerRef.current = null;
+        diag(`timer BERBUNYI untuk ${trackKey}`);
         // Verifikasi ULANG saat timer berbunyi: track harus masih sama, masih berjalan, dan
         // benar-benar sudah memenuhi waktu (guard terhadap event yang mungkin datang di sela).
         const tr = trackerRef.current;
-        if (tr.trackKey !== trackKey) return;
-        if (msUntilEligible(tr, Date.now()) > 0) return;
-        if (scrobbledTrackKeyRef.current === trackKey) return;
+        if (tr.trackKey !== trackKey) { diag(`timer batal: track berganti`); return; }
+        if (msUntilEligible(tr, Date.now()) > 0) { diag(`timer batal: belum cukup waktu`); return; }
+        if (scrobbledTrackKeyRef.current === trackKey) { diag(`timer batal: sudah discrobble`); return; }
 
         scrobbledTrackKeyRef.current = trackKey;
+        diag(`LAYAK -> memicu enqueue untuk ${trackKey}`);
 
         const isInternal = data.packageName === 'com.scrola.app';
         (isInternal ? Promise.resolve(true) : getExternalScrobbleEnabled())

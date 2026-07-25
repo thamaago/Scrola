@@ -24,17 +24,32 @@ async function runMigrations(db: SQLiteDBConnection) {
   );
 
   for (const migration of pending) {
+    // CATATAN: PRAGMA user_version di-set DI LUAR transaksi. Di SQLite, mengeksekusi
+    // `PRAGMA user_version = N` di dalam BEGIN...COMMIT bisa diabaikan diam-diam pada sebagian
+    // versi/binding — akibatnya versi TIDAK PERNAH naik, migrasi yang sama dijalankan lagi tiap
+    // app dibuka, dan pernyataan seperti `ALTER TABLE ADD COLUMN` gagal pada jalannya yang kedua
+    // dengan "duplicate column name". Itu menggagalkan SELURUH getDb() → tidak ada scrobble yang
+    // bisa masuk antrean, riwayat tak bisa ditulis, dan panel antrean melempar. Gejalanya persis:
+    // UI berkata "tercatat" tapi Riwayat kosong.
     await db.execute('BEGIN TRANSACTION;');
     try {
-      for (const statement of migration.statements) {
-        await db.execute(statement);
+      // Migrasi bisa berupa daftar statement statis (statements) ATAU fungsi yang bisa memeriksa
+      // kondisi DB dulu (statementsFn) — yang terakhir dipakai untuk migrasi idempoten seperti
+      // ADD COLUMN yang harus aman pada DB setengah-termigrasi.
+      if (typeof (migration as any).statementsFn === 'function') {
+        await (migration as any).statementsFn(db);
+      } else {
+        for (const statement of (migration as any).statements ?? []) {
+          await db.execute(statement);
+        }
       }
-      await db.execute(`PRAGMA user_version = ${migration.version};`);
       await db.execute('COMMIT;');
     } catch (e) {
       await db.execute('ROLLBACK;');
       throw new Error(`Migrasi v${migration.version} gagal: ${(e as Error).message}`);
     }
+    // Set versi SETELAH commit berhasil — di luar transaksi, supaya benar-benar tersimpan.
+    await db.execute(`PRAGMA user_version = ${migration.version};`);
   }
 }
 

@@ -17,6 +17,45 @@ tooling).
 
 ## [Unreleased]
 
+### Added — Log peristiwa scrobble on-device (berhenti menebak, mulai mengukur)
+- Setelah dua perbaikan berbasis dugaan (timer, migrasi DB) tidak menyelesaikan "musik tidak
+  tercatat", ditambahkan **jejak runtime nyata** alih-alih menebak lagi. 16 titik `diag()` di
+  sepanjang pipeline: timer berbunyi → enqueue masuk → addToQueue OK/gagal → sesi OK/null →
+  scrobbleBatch kirim → balasan Last.fm (diterima/ditolak) → addHistoryBatch OK/gagal.
+- **`DiagnosticsPlugin` diperluas**: `appendLog`/`readEventLog`/`clearEventLog` menulis ring
+  buffer 100 baris ke `filesDir/event_log.txt` — bisa dibaca langsung dari panel baru "Log
+  Peristiwa Scrobble" di Pengaturan, tanpa perlu adb/komputer.
+- Tujuannya menemukan lapis PERSIS tempat rantai putus. Hipotesis yang akan dibedakan oleh log:
+  (a) timer tak pernah berbunyi → masalah di jalur event/eligibility; (b) enqueue masuk tapi
+  addToQueue gagal → DB; (c) sesi null → scrobble tertahan karena dianggap belum login; (d)
+  scrobbleBatch ditolak Last.fm → masalah signature/kredensial; (e) semua OK tapi addHistoryBatch
+  gagal → bug penulisan riwayat. Masing-masing mengarah ke perbaikan yang berbeda.
+- Ini bukan fitur untuk pengguna akhir — ini instrumen diagnosis. Akan dicabut/disederhanakan
+  begitu akar masalah ketemu.
+
+### Fixed — AKAR "UI bilang tercatat tapi Riwayat kosong": migrasi DB mengunci seluruh database
+- **Gejala dari 3 screenshot pengguna yang saling bertentangan:** layar Sekarang menyatakan "sudah
+  memenuhi syarat — tercatat ke Riwayat", Antrean "kosong", tapi Riwayat "masih kosong" — dan
+  panel Antrean menampilkan "Kegagalan terakhir: Antrean tidak terbaca". Ketidakcocokan itu berarti
+  seluruh lapisan DB gagal, bukan cuma satu query.
+- **Akar 1 — `PRAGMA user_version` di DALAM transaksi.** Runner migrasi men-set versi skema di
+  dalam `BEGIN...COMMIT`. Pada SQLite, PRAGMA itu bisa diabaikan diam-diam di dalam transaksi,
+  sehingga `user_version` TIDAK PERNAH naik. Akibatnya migrasi v2 (`ALTER TABLE ADD COLUMN note`,
+  ditambahkan bersama fitur catatan) dijalankan ULANG setiap app dibuka, gagal pada jalan kedua
+  dengan "duplicate column name", dan menggagalkan SELURUH `getDb()`. Tidak ada scrobble yang bisa
+  masuk antrean, riwayat tak bisa ditulis, status antrean melempar. PRAGMA dipindah ke LUAR
+  transaksi (setelah COMMIT) supaya benar-benar tersimpan.
+- **Akar 2 — migrasi v2 tidak idempoten.** Untuk memulihkan database yang TERLANJUR rusak oleh
+  bug di atas (kolom `note` sudah ada tapi versi masih 1), migrasi v2 kini berupa fungsi yang
+  memeriksa `PRAGMA table_info` dulu dan hanya menjalankan `ALTER` bila kolomnya belum ada.
+  Runner migrasi diperluas mendukung `statementsFn` selain `statements`. Disimulasikan: DB baru,
+  DB sudah termigrasi, dan DB setengah-rusak — ketiganya pulih tanpa crash (7 assertion).
+- Ini menjelaskan kenapa fitur catatan "mematahkan" scrobble: keduanya tak berhubungan secara
+  logika, tapi migrasi yang menyertai catatan-lah yang mengunci DB. Pelajaran: migrasi DB pertama
+  pada database berisi data adalah titik paling berbahaya, dan memang sudah ditandai berisiko saat
+  fitur catatan ditambahkan — hanya saja penyebab teknis persisnya (PRAGMA dalam transaksi) baru
+  ketahuan dari perangkat.
+
 ### Fixed — AKAR "musik tidak tercatat": kelayakan scrobble kini berbasis WAKTU, bukan position
 - **Temuan dari perangkat + membandingkan dengan Pano Scrobbler.** Panel diagnosis membuktikan
   deteksi bekerja sempurna (Spotify melapor 45×, izin/service/aliran data semua hijau) — jadi bug
