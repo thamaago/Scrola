@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { registerPlugin } from '@capacitor/core';
 import { notifyNowPlaying, enqueueScrobble } from '../lib/scrobbleEngine';
-import { isScrobbleEligible } from '../lib/scrobbleLogic';
+import {
+  createTracker,
+  applyEvent,
+  msUntilEligible,
+  type PlaybackTracker,
+} from '../lib/playbackTimer';
 import { getExternalScrobbleEnabled } from '../lib/preferences';
 
 export interface NowPlayingPluginInterface {
@@ -60,6 +65,10 @@ export function useNowPlayingListener() {
     startedAt: number; // unix seconds — waktu track ini pertama terdeteksi, dipakai sebagai timestamp scrobble
   } | null>(null);
   const scrobbledTrackKeyRef = useRef<string | null>(null);
+  // Tracker waktu-berlalu (menggantikan ketergantungan pada position MediaSession yang mandek).
+  const trackerRef = useRef<PlaybackTracker>(createTracker());
+  // Timer terjadwal untuk memicu scrobble saat ambang waktu tercapai.
+  const scrobbleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let metaHandle: { remove: () => void } | undefined;
@@ -136,51 +145,63 @@ export function useNowPlayingListener() {
       if (!meta || !meta.artist || !meta.title) return;
 
       const trackKey = `${meta.artist}::${meta.title}`;
-      // Pakai fungsi tunggal yang sudah diunit-test, bukan menulis ulang aturannya di sini —
-      // sebelumnya kondisi ini diduplikasi manual dan berisiko divergen dari aturan resmi.
-      const eligible = isScrobbleEligible(meta.durationSec, positionSec);
+      const now = Date.now();
 
-      if (eligible && scrobbledTrackKeyRef.current !== trackKey) {
-        // Set flag SEBELUM enqueue supaya event playback beruntun (yang datang tiap detik) tidak
-        // memicu enqueue berkali-kali untuk track yang sama sebelum yang pertama selesai.
+      // Perbarui tracker WAKTU BERLALU. Kita TIDAK lagi memakai `positionSec` untuk memutuskan
+      // kelayakan — position dari MediaSession mandek kalau lagu diputar lurus (lihat
+      // playbackTimer.ts). Kita hitung sendiri berapa lama track benar-benar diputar.
+      trackerRef.current = applyEvent(
+        trackerRef.current,
+        { trackKey, isPlaying, durationSec: meta.durationSec },
+        now
+      );
+
+      // Jadwalkan (atau jadwalkan ulang) pengecekan kelayakan. Setiap event menghitung ulang
+      // "berapa lama lagi sampai layak", lalu memasang satu timer. Timer lama dibatalkan supaya
+      // tidak menumpuk.
+      if (scrobbleTimerRef.current !== null) {
+        clearTimeout(scrobbleTimerRef.current);
+        scrobbleTimerRef.current = null;
+      }
+
+      if (scrobbledTrackKeyRef.current === trackKey) return; // sudah discrobble
+
+      const wait = msUntilEligible(trackerRef.current, now);
+      if (!Number.isFinite(wait)) return; // dijeda atau durasi tak valid: tak ada yang dijadwalkan
+
+      scrobbleTimerRef.current = setTimeout(() => {
+        scrobbleTimerRef.current = null;
+        // Verifikasi ULANG saat timer berbunyi: track harus masih sama, masih berjalan, dan
+        // benar-benar sudah memenuhi waktu (guard terhadap event yang mungkin datang di sela).
+        const tr = trackerRef.current;
+        if (tr.trackKey !== trackKey) return;
+        if (msUntilEligible(tr, Date.now()) > 0) return;
+        if (scrobbledTrackKeyRef.current === trackKey) return;
+
         scrobbledTrackKeyRef.current = trackKey;
 
-        // Hormati toggle "Scrobble dari app lain" (Pengaturan). Saat mati, event dari aplikasi
-        // musik LAIN diabaikan — tapi player internal Scrola (com.scrola.app) TETAP mencatat,
-        // karena mematikan toggle berarti "catat player internal saja", bukan "matikan scrobble".
-        // Pengecekan dilakukan async di dalam sini (bukan di luar) supaya tidak menahan jalur
-        // event; getExternalScrobbleEnabled() dicache di memori jadi ini murah setelah panggilan
-        // pertama.
         const isInternal = data.packageName === 'com.scrola.app';
         (isInternal ? Promise.resolve(true) : getExternalScrobbleEnabled())
           .then((allowed) => {
-            if (!allowed) {
-              // Dilewati sesuai preferensi user — bukan kegagalan, jadi flag TETAP di-set supaya
-              // track ini tidak dicoba lagi berulang kali selama masih diputar.
-              return;
-            }
+            if (!allowed) return; // dilewati sesuai preferensi; flag tetap set
             return enqueueScrobble(
               {
                 artist: meta.artist,
                 track: meta.title,
                 album: meta.album,
                 duration: meta.durationSec,
-                timestamp: meta.startedAt, // waktu track MULAI diputar, sesuai spek Last.fm — bukan waktu sekarang
+                timestamp: meta.startedAt,
               },
               data.packageName
             );
           })
           .catch((e) => {
-            // Kalau enqueue gagal (mis. DB belum siap), JANGAN biarkan track ini hilang diam-diam.
-            // Reset flag HANYA kalau track yang aktif masih sama — supaya percobaan playback
-            // berikutnya untuk track ini bisa enqueue lagi. Kalau user sudah ganti lagu, biarkan
-            // flag milik track baru apa adanya (jangan ditimpa balik).
             if (scrobbledTrackKeyRef.current === trackKey) {
               scrobbledTrackKeyRef.current = null;
             }
             console.warn('Gagal memasukkan scrobble ke antrean, akan dicoba lagi:', e);
           });
-      }
+      }, wait);
     }).then((h) => (stateHandle = h)).catch((e) => {
       console.warn('NowPlaying.addListener(playbackStateChanged) gagal didaftarkan:', e);
     });
@@ -188,6 +209,7 @@ export function useNowPlayingListener() {
     return () => {
       metaHandle?.remove();
       stateHandle?.remove();
+      if (scrobbleTimerRef.current !== null) clearTimeout(scrobbleTimerRef.current);
     };
   }, []);
 

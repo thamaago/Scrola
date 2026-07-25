@@ -17,6 +17,30 @@ tooling).
 
 ## [Unreleased]
 
+### Fixed — AKAR "musik tidak tercatat": kelayakan scrobble kini berbasis WAKTU, bukan position
+- **Temuan dari perangkat + membandingkan dengan Pano Scrobbler.** Panel diagnosis membuktikan
+  deteksi bekerja sempurna (Spotify melapor 45×, izin/service/aliran data semua hijau) — jadi bug
+  bukan di deteksi. Akarnya: jalur lama membaca `PlaybackState.position` dari MediaSession dan
+  membandingkannya dengan ambang. Tapi `position` HANYA diperbarui saat callback
+  `onPlaybackStateChanged` menyala (play/pause/seek), BUKAN tiap detik. Lagu yang diputar lurus
+  tanpa disentuh membuat `position` mandek → ambang tak pernah terlampaui → scrobble TIDAK PERNAH
+  terpicu meski event metadata terus masuk.
+- **Solusi meniru pendekatan Pano:** hitung waktu putar sendiri dengan timer, jangan percaya
+  `position`. (Terlihat dari issue #570 Pano yang berbicara soal "menit ke-N dari instance baru",
+  bukan posisi lagu — bukti mereka memakai elapsed time, bukan position.) Modul baru
+  **`playbackTimer.ts`** melacak total waktu track benar-benar diputar (pause menghentikan
+  akumulasi, resume melanjutkan), lalu `useNowPlaying` menjadwalkan `setTimeout` untuk memicu
+  scrobble tepat saat ambang waktu tercapai — tanpa bergantung pada `position` sama sekali.
+- **18 assertion** memvalidasi termasuk skenario pause/resume (waktu jeda tidak dihitung) dan lagu
+  diputar lurus (layak murni berdasarkan waktu). `position` kini hanya dipakai untuk tampilan UI,
+  tidak lagi untuk keputusan scrobble.
+
+### Fixed — Panel "Antrean Scrobble" tersangkut "Memeriksa…" selamanya
+- Kalau `getQueueStatus()` melempar (mis. tabel belum siap), `catch` lama hanya mencatat log
+  sehingga `queueStatus` tetap `null` dan UI tersangkut di keadaan loading — terlihat di
+  screenshot pengguna. Kini di-set status eksplisit "Antrean tidak terbaca" supaya UI keluar dari
+  loading dan menunjukkan kondisi sebenarnya.
+
 ### Added — Diagnosis deteksi musik BERLAPIS (hasil riset arsitektur Pano Scrobbler)
 - **Temuan riset:** Pano Scrobbler memakai pendekatan yang SAMA dengan Scrola —
   `NotificationListenerService` + `MediaSessionManager` (dikonfirmasi dari kebijakan privasi &

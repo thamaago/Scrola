@@ -94,8 +94,11 @@ export default function SettingsScreen({
     getQueueStatus()
       .then(setQueueStatus)
       .catch((e) => {
-        // Panel diagnosis tidak boleh menjatuhkan layar Pengaturan kalau DB bermasalah.
+        // Panel diagnosis tidak boleh menjatuhkan layar Pengaturan kalau DB bermasalah — tapi juga
+        // TIDAK boleh tersangkut "Memeriksa…" selamanya. Set status kosong eksplisit supaya UI
+        // keluar dari keadaan loading dan menampilkan bahwa antreannya tidak terbaca.
         console.warn('Gagal membaca status antrean:', e);
+        setQueueStatus({ pending: 0, lastError: 'Antrean tidak terbaca', maxAttempts: 0, oldestTimestamp: null });
       });
   }
 
