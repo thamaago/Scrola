@@ -1,4 +1,4 @@
-import { getDb } from './db';
+import { getDb, runWriteWithRecovery } from './db';
 import type { TrackInfo } from '../lastfm';
 
 export interface QueuedRow extends TrackInfo {
@@ -28,10 +28,16 @@ export async function addToQueue(track: TrackInfo & { timestamp: number }) {
   // scrobble ganda — melengkapi guard flag di useNowPlaying. Dua event dianggap "sama" hanya kalau
   // timestamp mulai-nya sama; memutar lagu yang sama LAGI di waktu berbeda tetap tercatat terpisah
   // (memang seharusnya begitu — itu dua kali dengar yang sah).
-  await db.run(
-    `INSERT OR IGNORE INTO scrobble_queue (artist, track, album, album_artist, duration, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?);`,
-    [track.artist, track.track, track.album ?? null, track.albumArtist ?? null, track.duration ?? null, track.timestamp]
+  // Dibungkus recovery: kalau koneksi terlanjur punya transaksi menggantung (desync Android/SQLite,
+  // mis. warisan sebuah COMMIT batch yang gagal di flush sebelumnya), tulisan ini akan gagal dengan
+  // "cannot start a transaction within a transaction". runWriteWithRecovery membersihkannya lalu
+  // mengulang sekali — inilah titik yang persis gagal di log perangkat.
+  await runWriteWithRecovery(() =>
+    db.run(
+      `INSERT OR IGNORE INTO scrobble_queue (artist, track, album, album_artist, duration, timestamp)
+       VALUES (?, ?, ?, ?, ?, ?);`,
+      [track.artist, track.track, track.album ?? null, track.albumArtist ?? null, track.duration ?? null, track.timestamp]
+    )
   );
 }
 
@@ -112,21 +118,30 @@ export async function getQueueStatus(): Promise<{
 export async function addHistoryBatch(
   tracks: (TrackInfo & { timestamp: number; sourcePackage?: string })[]
 ) {
+  if (tracks.length === 0) return;
   const db = await getDb();
-  await db.execute('BEGIN TRANSACTION;');
-  try {
-    for (const t of tracks) {
-      await db.run(
-        `INSERT INTO scrobble_history (artist, track, album, album_artist, duration, timestamp, source_package)
-         VALUES (?, ?, ?, ?, ?, ?, ?);`,
-        [t.artist, t.track, t.album ?? null, t.albumArtist ?? null, t.duration ?? null, t.timestamp, t.sourcePackage ?? null]
-      );
-    }
-    await db.execute('COMMIT;');
-  } catch (e) {
-    await db.execute('ROLLBACK;');
-    throw e;
-  }
+
+  // Pakai executeSet() milik plugin, BUKAN `execute('BEGIN TRANSACTION')` manual. Plugin
+  // mengelola transaksi (dan mode WAL) secara internal; menjalankan BEGIN manual menciptakan
+  // transaksi bersarang yang ditolak SQLite ("cannot start a transaction within a transaction")
+  // dan, kalau menggantung, menggagalkan SEMUA penulisan DB berikutnya. executeSet menjalankan
+  // seluruh batch atomik dengan cara yang benar.
+  const set = tracks.map((t) => ({
+    statement: `INSERT INTO scrobble_history (artist, track, album, album_artist, duration, timestamp, source_package)
+                VALUES (?, ?, ?, ?, ?, ?, ?);`,
+    values: [
+      t.artist,
+      t.track,
+      t.album ?? null,
+      t.albumArtist ?? null,
+      t.duration ?? null,
+      t.timestamp,
+      t.sourcePackage ?? null,
+    ],
+  }));
+  // Sama seperti addToQueue: bungkus recovery supaya satu transaksi menggantung tidak menggagalkan
+  // penulisan Riwayat (yang bikin "Riwayat kosong padahal scrobble terkirim").
+  await runWriteWithRecovery(() => db.executeSet(set, /* transaction = */ true));
 }
 
 export async function getHistory(limit = 100, offset = 0): Promise<HistoryRow[]> {

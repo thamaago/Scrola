@@ -17,6 +17,49 @@ tooling).
 
 ## [Unreleased]
 
+### Fixed — AKAR SEBENARNYA "musik tidak tercatat": desync transaksi Android vs SQLite
+- **Bukti pasti dari log perangkat.** Pipeline berjalan sempurna sampai titik terakhir:
+  `timer BERBUNYI` → `LAYAK` → `enqueue MASUK (Kirana Seo - Garis Batas, src=com.spotify.music)`
+  → lalu **`addToQueue GAGAL: cannot start a transaction within a transaction: BEGIN TRANSACTION`**.
+  Deteksi, kelayakan, dan pemicuan scrobble semuanya benar; yang gagal adalah penulisan ke DB.
+- **KOREKSI diagnosis sebelumnya (jujur).** Entri lama di CHANGELOG ini menuding "`BEGIN
+  TRANSACTION` manual di `runMigrations` dan `addHistoryBatch`". Itu SALAH: audit `grep` memastikan
+  kode tidak punya `BEGIN` manual sama sekali. Dan "ROLLBACK defensif" yang dulu ditambahkan di
+  `getDb()` (`db.execute('ROLLBACK;')`, terbungkus `transaction=true`) ternyata **tidak menyelesaikan
+  apa pun** — simulasi state-machine membuktikannya buta terhadap kondisi yang sebenarnya perlu
+  dibersihkan.
+- **Akar yang benar (terverifikasi dari sumber native `Database.java` 6.x).** Plugin melacak
+  transaksi lewat pembukuan Android `_db.inTransaction()` (penghitung stack), sementara COMMIT
+  aktual dikirim ke SQLite terpisah. Ketika sebuah COMMIT gagal di tengah (mis. batch di flush),
+  `endTransaction()` tetap men-DECREMENT stack Android ke 0 **padahal transaksi SQLite masih
+  terbuka**. Sejak itu keduanya DESYNC: Android pikir tak ada transaksi, SQLite tahu masih ada.
+  Penulisan berikutnya (`addToQueue` → `run` → `beginTransaction`) mengeluarkan `BEGIN` saat SQLite
+  masih in-transaction → ditolak. Query tetap jalan (tak menyentuh state transaksi) — itulah kenapa
+  Riwayat & status antrean tetap kebaca sementara SEMUA tulisan mati sampai app di-restart.
+- **Perbaikan (divalidasi simulasi, bukan asumsi):**
+  - `clearDanglingTransaction()` baru: mengirim `ROLLBACK` **UNWRAPPED** (`execute('ROLLBACK;',
+    false)`) langsung ke SQLite. Ini menutup transaksi menggantung tanpa menyentuh stack Android —
+    berbeda dari `isTransactionActive()/rollbackTransaction()` yang membaca stack Android (=0 saat
+    desync) sehingga tak pernah membersihkan apa-apa.
+  - `runWriteWithRecovery()` baru membungkus `addToQueue` dan `addHistoryBatch`: kalau tulisan kena
+    "cannot start a transaction within a transaction", bersihkan lalu ULANG sekali. Penting karena
+    dangle bisa lahir di TENGAH sesi (COMMIT batch gagal) lalu mematikan `addToQueue` berikutnya —
+    persis urutan di log (flush 10:22 → addToQueue gagal 10:24). Perbaikan hanya-di-init tak cukup.
+  - `getDb()`: `ROLLBACK` defensif yang lama (terbungkus, tak efektif) diganti pemanggilan
+    `clearDanglingTransaction()` yang unwrapped.
+  - `runMigrations`: `PRAGMA user_version` kini di-set dengan `transaction=false` supaya benar-benar
+    persist (sekaligus menuntaskan bug lama "v2 jalan ulang tiap launch") dan tidak menambah
+    permukaan pembungkusan transaksi.
+- **Test regresi baru** `src/lib/db/__tests__/txRecovery.test.ts` (8 kasus) memodelkan state machine
+  plugin dan mengunci: (a) COMMIT gagal → desync, (b) tulisan berikutnya gagal seperti di device,
+  (c) recovery salah (isTransactionActive & ROLLBACK terbungkus) TIDAK membersihkan, (d) ROLLBACK
+  unwrapped + retry membersihkan & tulisan berhasil, (e) koneksi bersih tidak terpengaruh, (f) error
+  non-transaksi tetap diteruskan.
+- **Belum tervalidasi di device.** Ini CI/simulasi, bukan build fisik. "Device is the final truth":
+  yang membuktikan perbaikan ini benar adalah `Riwayat` yang akhirnya terisi di SM-X706B, bukan test
+  hijau. Cara cek cepat: putar satu lagu lewat separuh → Log Peristiwa harus menunjukkan
+  `addToQueue OK` (bukan GAGAL), lalu tiket muncul di Riwayat.
+
 ### Added — Log peristiwa scrobble on-device (berhenti menebak, mulai mengukur)
 - Setelah dua perbaikan berbasis dugaan (timer, migrasi DB) tidak menyelesaikan "musik tidak
   tercatat", ditambahkan **jejak runtime nyata** alih-alih menebak lagi. 16 titik `diag()` di
