@@ -32,12 +32,14 @@ export async function addToQueue(track: TrackInfo & { timestamp: number }) {
   // mis. warisan sebuah COMMIT batch yang gagal di flush sebelumnya), tulisan ini akan gagal dengan
   // "cannot start a transaction within a transaction". runWriteWithRecovery membersihkannya lalu
   // mengulang sekali — inilah titik yang persis gagal di log perangkat.
-  await runWriteWithRecovery(() =>
-    db.run(
-      `INSERT OR IGNORE INTO scrobble_queue (artist, track, album, album_artist, duration, timestamp)
-       VALUES (?, ?, ?, ?, ?, ?);`,
-      [track.artist, track.track, track.album ?? null, track.albumArtist ?? null, track.duration ?? null, track.timestamp]
-    )
+  await runWriteWithRecovery(
+    () =>
+      db.run(
+        `INSERT OR IGNORE INTO scrobble_queue (artist, track, album, album_artist, duration, timestamp)
+         VALUES (?, ?, ?, ?, ?, ?);`,
+        [track.artist, track.track, track.album ?? null, track.albumArtist ?? null, track.duration ?? null, track.timestamp]
+      ),
+    'addToQueue'
   );
 }
 
@@ -141,7 +143,7 @@ export async function addHistoryBatch(
   }));
   // Sama seperti addToQueue: bungkus recovery supaya satu transaksi menggantung tidak menggagalkan
   // penulisan Riwayat (yang bikin "Riwayat kosong padahal scrobble terkirim").
-  await runWriteWithRecovery(() => db.executeSet(set, /* transaction = */ true));
+  await runWriteWithRecovery(() => db.executeSet(set, /* transaction = */ true), 'addHistoryBatch');
 }
 
 export async function getHistory(limit = 100, offset = 0): Promise<HistoryRow[]> {

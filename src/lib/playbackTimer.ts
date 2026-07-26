@@ -95,6 +95,41 @@ export function applyEvent(
   return { ...t, durationSec: ev.durationSec || t.durationSec };
 }
 
+/** Hasil perhitungan progres kartu "Sedang Diamati" — murni, tanpa menyentuh state React. */
+export interface ObservedProgress {
+  /** Durasi <= 30s: tidak akan pernah dicatat (bar disembunyikan, tampilkan "terlalu pendek"). */
+  tooShort: boolean;
+  /** Ambang scrobble dalam detik; 0 kalau tooShort. */
+  thresholdSec: number;
+  /** Waktu putar (bukan posisi) yang sudah terkumpul, dalam detik. */
+  playedSec: number;
+  /** 0..1 untuk lebar bar. */
+  progress: number;
+  /** Detik menuju layak; 0 kalau sudah. */
+  remainingSec: number;
+  /** progress sudah mencapai ambang. */
+  eligible: boolean;
+}
+
+/**
+ * Menghitung progres bar "Sedang Diamati" dari WAKTU BERLALU (playedMs), bukan `position`
+ * MediaSession yang mandek di antara event. Dipisah jadi fungsi murni supaya bisa dites tanpa
+ * React/plugin — sekaligus menyatukan sumber kebenaran bar dengan logika kelayakan scrobble
+ * (keduanya kini memakai played-time yang sama), jadi teks "tercatat dalam ..." benar-benar
+ * turun seiring timer scrobble sungguhan, bukan angka mati.
+ */
+export function observedProgress(durationSec: number, playedMs: number): ObservedProgress {
+  const tooShort = !(durationSec > 30);
+  const thresholdSec = tooShort ? 0 : scrobbleThresholdSec(durationSec);
+  const playedSec = Math.max(0, playedMs / 1000);
+  if (thresholdSec <= 0) {
+    return { tooShort, thresholdSec: 0, playedSec, progress: 0, remainingSec: 0, eligible: false };
+  }
+  const progress = Math.min(playedSec / thresholdSec, 1);
+  const remainingSec = Math.max(0, Math.ceil(thresholdSec - playedSec));
+  return { tooShort, thresholdSec, playedSec, progress, remainingSec, eligible: progress >= 1 };
+}
+
 /**
  * Berapa ms lagi sampai track ini layak discrobble, dihitung dari `now`.
  * <= 0 berarti SUDAH layak. Infinity berarti tak akan pernah (durasi tak valid).

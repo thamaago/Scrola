@@ -6,6 +6,7 @@ import {
   createTracker,
   applyEvent,
   msUntilEligible,
+  playedMsUntil,
   type PlaybackTracker,
 } from '../lib/playbackTimer';
 import { getExternalScrobbleEnabled } from '../lib/preferences';
@@ -44,6 +45,12 @@ export interface NowPlayingState {
   album?: string;
   durationSec: number;
   positionSec: number;
+  /**
+   * Waktu putar (bukan posisi) yang sudah terkumpul untuk track ini, dalam ms. Sumber gerak bar
+   * "Sedang Diamati": `positionSec` dari MediaSession mandek di antara event, jadi bar dulu ikut
+   * beku. Nilai ini di-tick tiap detik dari tracker waktu-berlalu (lihat ticker di bawah).
+   */
+  playedMs: number;
   isPlaying: boolean;
 }
 
@@ -106,6 +113,7 @@ export function useNowPlayingListener() {
         album: meta.album,
         durationSec: meta.durationSec,
         positionSec: isSameTrack ? prev?.positionSec ?? 0 : 0,
+        playedMs: isSameTrack ? prev?.playedMs ?? 0 : 0,
         isPlaying: prev?.isPlaying ?? false,
       }));
 
@@ -156,6 +164,12 @@ export function useNowPlayingListener() {
         { trackKey, isPlaying, durationSec: meta.durationSec },
         now
       );
+
+      // Segerakan playedMs ke state begitu tracker diperbarui, supaya bar bereaksi langsung saat
+      // play/pause/seek tanpa menunggu tick 1 detik berikutnya. Di antara event, ticker di bawah
+      // yang menjaga bar tetap bergerak.
+      const playedNow = playedMsUntil(trackerRef.current, now);
+      setCurrent((prev) => (prev && prev.playedMs !== playedNow ? { ...prev, playedMs: playedNow } : prev));
 
       // Jadwalkan (atau jadwalkan ulang) pengecekan kelayakan. Setiap event menghitung ulang
       // "berapa lama lagi sampai layak", lalu memasang satu timer. Timer lama dibatalkan supaya
@@ -214,6 +228,30 @@ export function useNowPlayingListener() {
       stateHandle?.remove();
       if (scrobbleTimerRef.current !== null) clearTimeout(scrobbleTimerRef.current);
     };
+  }, []);
+
+  // Ticker halus untuk bar "Sedang Diamati". `positionSec` dari MediaSession hanya di-update saat
+  // event play/pause/seek, jadi kalau lagu diputar lurus bar dulu MEMBEKU (dan cuma "melompat"
+  // saat Spotify sesekali memancarkan ulang state). Di sini kita render ulang tiap detik dari
+  // tracker WAKTU-BERLALU — sumber yang sama dengan logika kelayakan scrobble — sehingga bar &
+  // teks "tercatat dalam ..." bergerak mulus dan jujur mengikuti timer scrobble sebenarnya.
+  //
+  // Aman terhadap jeda: saat dijeda `playingSince` null, `playedMsUntil` mengembalikan nilai beku,
+  // jadi bar berhenti sendiri tanpa perlu logika khusus. Kita hanya setCurrent kalau nilainya
+  // BERUBAH, supaya tidak memicu render sia-sia saat idle/dijeda.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCurrent((prev) => {
+        if (!prev) return prev;
+        // Hanya laporkan played-time kalau tracker memang untuk track yang sedang ditampilkan —
+        // mencegah sisa tracker dari track sebelumnya bocor ke kartu track baru.
+        const curKey = `${prev.artist}::${prev.title}`;
+        const t = trackerRef.current;
+        const played = t.trackKey === curKey ? playedMsUntil(t, Date.now()) : 0;
+        return prev.playedMs === played ? prev : { ...prev, playedMs: played };
+      });
+    }, 1000);
+    return () => clearInterval(id);
   }, []);
 
   return current;

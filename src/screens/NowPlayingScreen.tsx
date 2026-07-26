@@ -4,6 +4,7 @@ import EditMetadataScreen from './EditMetadataScreen';
 import SeekTimeline from '../components/SeekTimeline';
 import { usePlayer } from '../hooks/usePlayer';
 import { scrobbleThresholdSec } from '../lib/scrobbleLogic';
+import { observedProgress } from '../lib/playbackTimer';
 import { maybeScrobble, resetScrobbleGuard } from '../lib/scrobbleEngine';
 import NoteEditor from '../components/NoteEditor';
 import { hasNote, normalizeNoteForSave } from '../lib/noteLogic';
@@ -158,16 +159,16 @@ export default function NowPlayingScreen({
     //
     // Tampilannya SENGAJA dibuat berbeda dari panggung tiket di bawah: ini "yang Scrola amati",
     // bukan "yang kamu putar di Scrola". Kartu ringkas, tanpa disc berputar, tanpa slot printer.
-    const extThreshold =
-      externalNowPlaying && externalNowPlaying.durationSec > 30
-        ? scrobbleThresholdSec(externalNowPlaying.durationSec)
-        : 0;
-    const extRemaining = extThreshold
-      ? Math.max(0, Math.ceil(extThreshold - externalNowPlaying!.positionSec))
-      : 0;
-    const extProgress = extThreshold
-      ? Math.min(externalNowPlaying!.positionSec / extThreshold, 1)
-      : 0;
+    // Progres kartu dihitung dari WAKTU BERLALU (playedMs), bukan `positionSec` MediaSession yang
+    // membeku di antara event. observedProgress adalah fungsi murni yang sama-sama teruji di
+    // playbackTimer.test.ts, dan memakai ambang scrobble yang sama dengan logika kelayakan —
+    // jadi bar & "tercatat dalam ..." sinkron persis dengan kapan scrobble sungguhan terpicu.
+    const obs = externalNowPlaying
+      ? observedProgress(externalNowPlaying.durationSec, externalNowPlaying.playedMs)
+      : null;
+    const extThreshold = obs ? obs.thresholdSec : 0;
+    const extRemaining = obs ? obs.remainingSec : 0;
+    const extProgress = obs ? obs.progress : 0;
 
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
@@ -203,7 +204,7 @@ export default function NowPlayingScreen({
                     <div className="h-[3px] bg-ink rounded-full mt-3 overflow-hidden">
                       <div
                         className="h-full bg-amber rounded-full"
-                        style={{ width: `${extProgress * 100}%`, transition: 'width 0.4s linear' }}
+                        style={{ width: `${extProgress * 100}%`, transition: 'width 1s linear' }}
                       />
                     </div>
                     <p className="font-mono text-[10px] text-muted mt-1.5">

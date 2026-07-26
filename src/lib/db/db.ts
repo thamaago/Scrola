@@ -8,6 +8,7 @@
  */
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { MIGRATIONS } from './schema';
+import { diag } from '../diagnostics';
 
 const DB_NAME = 'scrola.db';
 const sqlite = new SQLiteConnection(CapacitorSQLite);
@@ -24,11 +25,17 @@ let initPromise: Promise<SQLiteDBConnection> | null = null;
  * isTransactionActive()/rollbackTransaction() — keduanya membaca stack Android yang justru 0 saat
  * desync, jadi buta terhadap transaksi yang perlu ditutup.
  */
-export async function clearDanglingTransaction(db: SQLiteDBConnection): Promise<void> {
+export async function clearDanglingTransaction(db: SQLiteDBConnection, context = 'init'): Promise<void> {
   try {
     await db.execute('ROLLBACK;', false);
+    // Kalau ROLLBACK BERHASIL, berarti tadi MEMANG ada transaksi menggantung yang baru saja
+    // ditutup — inilah desync yang selama ini bikin tulisan mati. Kita catat SUPAYA TERLIHAT di
+    // Log Peristiwa on-device: bukti langsung bahwa recovery menyelamatkan sesi, bukan sekadar
+    // sesi kebetulan bersih. (Kalau tidak ada dangle, execute melempar dan kita diam di bawah.)
+    diag(`recovery[${context}]: transaksi menggantung DIBERSIHKAN (rollback sukses)`);
   } catch {
-    // Normal: tidak ada transaksi menggantung untuk ditutup.
+    // Normal & paling sering: tidak ada transaksi menggantung ("cannot rollback - no transaction
+    // is active"). Senyap — ini bukan error, cuma berarti tidak ada yang perlu ditutup.
   }
 }
 
@@ -42,14 +49,18 @@ export async function clearDanglingTransaction(db: SQLiteDBConnection): Promise<
  * Dipakai membungkus penulisan pada jalur scrobble (addToQueue, addHistoryBatch) supaya satu
  * transaksi menggantung tidak lagi mematikan seluruh pencatatan sampai app di-restart.
  */
-export async function runWriteWithRecovery<T>(fn: () => Promise<T>): Promise<T> {
+export async function runWriteWithRecovery<T>(fn: () => Promise<T>, label = 'write'): Promise<T> {
   try {
     return await fn();
   } catch (e) {
     const msg = (e as Error).message ?? '';
     if (/within a transaction|cannot start a transaction/i.test(msg)) {
+      // Inilah gejala desync yang muncul di TENGAH sesi. Catat supaya urutannya jelas di log
+      // perangkat: "<label> kena dangle -> bersihkan -> ulang". Kalau setelah ini `<label> OK`
+      // muncul, itu bukti on-device bahwa recovery berhasil menyelamatkan tulisan.
+      diag(`recovery[${label}]: kena "cannot start a transaction" — bersihkan lalu ulang`);
       const db = await getDb();
-      await clearDanglingTransaction(db);
+      await clearDanglingTransaction(db, label);
       return await fn(); // ulang sekali setelah dibersihkan
     }
     throw e;

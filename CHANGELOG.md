@@ -17,6 +17,38 @@ tooling).
 
 ## [Unreleased]
 
+### Fixed — bar "Sedang Diamati" beku dari awal sampai akhir (visual, bukan scrobble)
+- **Gejala dari perangkat:** progress bar di kartu Sedang Diamati diam di posisi awal sepanjang
+  lagu, lalu sesekali "melompat", padahal scrobble-nya sendiri berjalan normal.
+- **Akar:** bar & teks "tercatat dalam ..." dihitung dari `externalNowPlaying.positionSec`, yang
+  hanya di-update saat event `playbackStateChanged` (play/pause/seek) — bukan tiap detik. Kalau
+  lagu diputar lurus, Spotify tidak memancarkan state baru, jadi `positionSec` membeku dan bar ikut
+  beku; ia hanya melompat ketika Spotify sesekali memancarkan ulang state. Ini efek samping migrasi
+  kelayakan ke waktu-berlalu (`playbackTimer.ts`): logika scrobble sudah pindah ke played-time,
+  tapi visualnya tertinggal di `positionSec` yang mati.
+- **Perbaikan:** bar kini di-drive dari WAKTU BERLALU yang sama dengan logika kelayakan.
+  - Helper murni baru `observedProgress(durationSec, playedMs)` di `playbackTimer.ts` (menghitung
+    progress/remaining/eligible dari played-time & ambang scrobble yang sama) — 6 test di
+    `playbackTimer.test.ts`.
+  - `useNowPlaying`: field `playedMs` di state + **ticker 1 detik** yang me-render ulang dari
+    tracker played-time; aman terhadap jeda (nilai beku saat `playingSince` null) dan hanya
+    setCurrent kalau nilainya berubah (tak ada render sia-sia saat idle).
+  - `NowPlayingScreen`: memakai `observedProgress`, transisi bar disamakan ke `1s linear`.
+  - Efek samping bagus: "tercatat dalam ..." sekarang turun sinkron dengan timer scrobble
+    sungguhan, bukan angka mati. Belum divalidasi di device.
+
+### Added — recovery transaksi menggantung kini TERLIHAT di Log Peristiwa
+- `clearDanglingTransaction()` dan `runWriteWithRecovery()` sebelumnya senyap: kalau sesi kebetulan
+  bersih ATAU recovery menyala, log sama-sama cuma menampilkan `addToQueue OK` — tak bisa dibedakan.
+- Sekarang: `clearDanglingTransaction` memancarkan `diag('recovery[<ctx>]: transaksi menggantung
+  DIBERSIHKAN')` **hanya kalau ROLLBACK benar-benar sukses** (artinya memang ada dangle nyata; kalau
+  tak ada, tetap senyap). `runWriteWithRecovery` menerima `label` (`addToQueue`/`addHistoryBatch`)
+  dan mencatat saat menangkap error "cannot start a transaction" lalu mengulang.
+- Tujuannya bukti langsung on-device: kalau log menampilkan `recovery[addToQueue]: ... DIBERSIHKAN`
+  diikuti `addToQueue OK`, itu menunjukkan fix desync benar-benar menyelamatkan sesi yang
+  menggantung — bukan sekadar sesi kebetulan bersih. Tanpa ini, "sesi bersih lolos" dan "recovery
+  berhasil" tak terbedakan di log.
+
 ### Fixed — AKAR SEBENARNYA "musik tidak tercatat": desync transaksi Android vs SQLite
 - **Bukti pasti dari log perangkat.** Pipeline berjalan sempurna sampai titik terakhir:
   `timer BERBUNYI` → `LAYAK` → `enqueue MASUK (Kirana Seo - Garis Batas, src=com.spotify.music)`
