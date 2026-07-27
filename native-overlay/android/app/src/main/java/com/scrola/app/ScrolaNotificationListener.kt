@@ -1,5 +1,6 @@
 package com.scrola.app
 
+import android.app.Notification
 import android.content.ComponentName
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -54,11 +55,22 @@ class ScrolaNotificationListener : NotificationListenerService() {
         @Volatile var activeSessionCount: Int = 0
             private set
 
+        /**
+         * Himpunan paket pemutar yang PERNAH benar-benar terbaca (mengirim event) — mis.
+         * com.spotify.music, com.google.android.apps.youtube.music, pemutar lokal, dst. Dipakai
+         * Pengaturan untuk menampilkan daftar "sumber terdeteksi" agar cakupan lintas-pemutar bisa
+         * diverifikasi langsung oleh pengguna. LinkedHashSet menjaga urutan pertama-terlihat;
+         * dibungkus synchronized karena diakses dari thread callback maupun thread plugin.
+         */
+        val detectedPackages: MutableSet<String> =
+            java.util.Collections.synchronizedSet(LinkedHashSet<String>())
+
         /** Dipanggil setiap kali ada kabar dari aplikasi musik — penanda data BENAR-BENAR mengalir. */
         fun noteEvent(packageName: String?) {
             lastEventAtMs = System.currentTimeMillis()
             lastEventPackage = packageName
             totalEvents++
+            if (!packageName.isNullOrEmpty()) detectedPackages.add(packageName)
         }
 
         fun noteConnected(connected: Boolean) {
@@ -73,6 +85,9 @@ class ScrolaNotificationListener : NotificationListenerService() {
 
     private var mediaSessionManager: MediaSessionManager? = null
     private val activeCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
+
+    /** Waktu pindai-ulang terakhir, untuk throttle onNotificationPosted (hindari pindai berlebihan). */
+    private var lastRescanMs: Long = 0L
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         rebindControllers(controllers ?: emptyList())
@@ -130,6 +145,14 @@ class ScrolaNotificationListener : NotificationListenerService() {
                     emitNowPlaying(controller, metadata)
                 }
                 override fun onPlaybackStateChanged(state: PlaybackState?) {
+                    // Saat play/resume, metadata sering TIDAK berubah sehingga onMetadataChanged
+                    // tak menyala — padahal kartu "Sedang Diamati" & tracker butuh nowPlayingChanged.
+                    // Jadi pancarkan KEDUANYA di sini (nowPlaying dulu agar metadata ter-set di sisi
+                    // JS, baru playbackState untuk update tracker). Tanpa ini, sesi yang DIMULAI
+                    // dalam keadaan pause lalu di-play (umum pada pemutar lokal) tak terdeteksi
+                    // sampai metadatanya kebetulan berubah. emitNowPlaying punya gerbang isPlaying
+                    // sendiri, jadi aman dipanggil walau sedang pause.
+                    emitNowPlaying(controller, controller.metadata)
                     emitPlaybackState(controller, state)
                 }
             }
@@ -153,15 +176,38 @@ class ScrolaNotificationListener : NotificationListenerService() {
         val isPlaying = controller.playbackState?.state == PlaybackState.STATE_PLAYING
         if (!isPlaying) return
 
-        val artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: ""
-        val title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: ""
+        // Artist/Title: sebagian pemutar terkenal tidak mengisi ARTIST/TITLE standar dan hanya
+        // menaruh info di field "display" (mis. beberapa app menaruh judul di DISPLAY_TITLE dan
+        // "Artist — Album" di DISPLAY_SUBTITLE). Kita jatuh ke field itu bila yang standar kosong,
+        // supaya deteksi tetap dapat nama track alih-alih string kosong.
+        var artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: ""
+        if (artist.isEmpty()) {
+            artist = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ARTIST)
+                ?: metadata.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)
+                ?: ""
+        }
+        var title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: ""
+        if (title.isEmpty()) {
+            title = metadata.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: ""
+        }
+
+        // Durasi: sesi internal Scrola adalah MediaSession Media3, yang MediaMetadata-nya tidak
+        // membawa durasi (Media3 menaruh durasi di timeline player, bukan metadata). Jadi
+        // METADATA_KEY_DURATION untuk sesi kita sendiri = 0. Backfill dari cache durasi player
+        // (thread-safe) supaya track internal memenuhi ambang scrobble berbasis durasi seperti
+        // sumber lain. Untuk sumber eksternal yang juga melaporkan 0, jalur JS punya fallback
+        // 4 menit (lihat playbackTimer.thresholdMsForDuration).
+        var durationMs = metadata.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION)
+        if (durationMs <= 0L && controller.packageName == packageName) {
+            durationMs = PlaybackService.instance?.lastKnownDurationMs ?: 0L
+        }
 
         val payload = JSONObject().apply {
             put("packageName", controller.packageName)
             put("artist", artist)
             put("title", title)
             put("album", metadata.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM) ?: "")
-            put("durationMs", metadata.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION))
+            put("durationMs", durationMs)
         }
         noteEvent(controller.packageName)
         NowPlayingPlugin.emit("nowPlayingChanged", payload)
@@ -207,6 +253,39 @@ class ScrolaNotificationListener : NotificationListenerService() {
     }
 
     // NotificationListenerService mewajibkan override ini walau kita tidak butuh isi notifikasi.
-    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) {}
+    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification?) {
+        // KENAPA: sebagian pemutar (khususnya YouTube Music) mendaftarkan MediaSession-nya ke
+        // MediaSessionManager beberapa saat SETELAH notifikasi media-nya muncul, sehingga
+        // onActiveSessionsChanged menyala terlambat dan deteksi terasa lambat dibanding Spotify
+        // (yang sesinya muncul cepat). Notifikasi media biasanya tampil lebih dulu — jadi begitu
+        // ada notifikasi kategori TRANSPORT (kontrol media), kita pindai ulang sesi aktif SEGERA.
+        // Hanya bereaksi ke notifikasi media (bukan tiap notifikasi biasa) + di-throttle, dan
+        // hanya rebind kalau kumpulan paket sesi benar-benar berubah — supaya tidak mengganggu
+        // callback yang sudah berjalan untuk sesi yang sama.
+        if (sbn?.notification?.category != Notification.CATEGORY_TRANSPORT) return
+        rescanActiveSessions()
+    }
+
     override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification?) {}
+
+    private fun rescanActiveSessions() {
+        val now = System.currentTimeMillis()
+        if (now - lastRescanMs < 1200) return // throttle: cukup sekali per ~1.2 detik
+        val mgr = mediaSessionManager ?: return
+        val component = ComponentName(this, ScrolaNotificationListener::class.java)
+        try {
+            val controllers = mgr.getActiveSessions(component)
+            // Rebind hanya kalau kumpulan PAKET sesi berubah (sesi baru muncul / sesi hilang).
+            // getActiveSessions mengembalikan instance controller baru tiap panggil, jadi kita
+            // bandingkan lewat packageName, bukan identitas objek.
+            val knownPkgs = activeCallbacks.keys.map { it.packageName }.toSet()
+            val newPkgs = controllers.map { it.packageName }.toSet()
+            if (newPkgs != knownPkgs) {
+                lastRescanMs = now
+                rebindControllers(controllers)
+            }
+        } catch (e: SecurityException) {
+            // Izin akses notifikasi dicabut sistem — abaikan; onListenerDisconnected yang menangani.
+        }
+    }
 }

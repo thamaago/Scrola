@@ -17,7 +17,15 @@ const HARI = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
  * prinsip tanpa-telemetri Scrola: rekap ini bekerja offline dan tidak membocorkan kebiasaan
  * dengarmu ke siapa pun. Agregasinya memakai fungsi murni di sisiBLogic.ts yang bisa diunit-test.
  */
-export default function SisiBScreen({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function SisiBScreen({
+  open,
+  onClose,
+  onOpenBabAlbum,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpenBabAlbum?: () => void;
+}) {
   const [stats, setStats] = useState<SisiBStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -224,6 +232,18 @@ export default function SisiBScreen({ open, onClose }: { open: boolean; onClose:
             </div>
 
             <div className="flex-1 min-h-8" />
+
+            {onOpenBabAlbum && (
+              <button
+                onClick={onOpenBabAlbum}
+                className="flex items-center justify-between w-full bg-surfaceRaised border border-white/5 rounded-lg py-3 px-4 mb-3 active:scale-[0.99] transition-transform"
+              >
+                <span className="text-sm text-paper">Lihat rekap Bulan &amp; Tahun</span>
+                <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase">
+                  Bab · Album →
+                </span>
+              </button>
+            )}
 
             {/* Fitur share ditandai jujur sebagai belum tersedia — lebih baik daripada tombol
                 yang tidak melakukan apa-apa saat ditekan. Ada di backlog DEVLOG. */}

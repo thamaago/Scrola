@@ -17,6 +17,173 @@ tooling).
 
 ## [Unreleased]
 
+### Fixed — deteksi lintas-pemutar: sesi yang mulai dalam keadaan PAUSE lalu di-play tak terbaca
+- **Akar:** callback `onPlaybackStateChanged` hanya memanggil `emitPlaybackState`, TIDAK
+  `emitNowPlaying`. Padahal `emitNowPlaying` (yang memancarkan metadata/track `nowPlayingChanged`)
+  di-skip saat bind kalau sesi sedang pause (`if (!isPlaying) return`). Akibatnya: pemutar yang
+  MULAI dalam keadaan pause lalu di-play — umum pada pemutar file lokal (Poweramp, Musicolet, dll.)
+  dan kadang YouTube Music — tak terdeteksi sampai metadatanya kebetulan berubah, karena sisi JS
+  tak pernah menerima metadata track itu.
+- **Perbaikan:** `onPlaybackStateChanged` kini memancarkan KEDUANYA — `emitNowPlaying` dulu (set
+  metadata di sisi JS) baru `emitPlaybackState` (update tracker). `emitNowPlaying` punya gerbang
+  isPlaying sendiri, jadi aman saat pause. Play/resume kini langsung memicu deteksi.
+
+### Added — daftar "Sumber terdeteksi" di Pengaturan (verifikasi cakupan lintas-pemutar)
+- Listener kini mencatat HIMPUNAN paket pemutar yang pernah benar-benar terbaca
+  (`detectedPackages`, LinkedHashSet ter-sinkronisasi), diekspos lewat status plugin, dan
+  ditampilkan sebagai chip di panel Diagnosis Pengaturan. Sekarang bisa diverifikasi langsung di
+  perangkat: putar lagu di Spotify, YouTube Music, dan pemutar lokal → semua muncul di daftar.
+- `sourceLabels.ts` diperluas: menambah pemutar lokal umum (Musicolet, Samsung Music, AIMP, Retro
+  Music, Phonograph, Pulsar, BlackPlayer) dan app populer di Indonesia/SEA (JOOX, Resso, Amazon
+  Music). Package tak dikenal tetap tampil apa adanya (memudahkan menambah ke daftar). Dikunci
+  `sourceLabels.test.ts` (5 test). Total 124 test lolos.
+- **Belum divalidasi di device.** Ini justru fitur untuk MEMVALIDASI di device: daftar sumber +
+  diag `sumber: <paket> … durasi <N>s` per track bersama-sama membuktikan pemutar mana yang
+  terbaca dan dengan data apa.
+
+
+### Added — seed posisi saat lagu terdeteksi di tengah pemutaran (akurasi waktu scrobble)
+- **Melengkapi perbaikan latensi deteksi:** kalau sebuah lagu baru terdeteksi saat sudah diputar
+  sebagian (mis. deteksi pemutar agak lambat), tracker waktu-berlalu dulu mulai dari 0 — sehingga
+  scrobble tertunda, bahkan bisa TERLEWAT kalau lagu keburu habis sebelum ambang tercapai.
+- **Perbaikan:** `applyEvent` kini menerima `positionMs` dan, HANYA saat track BARU, men-seed
+  `playedMs` dengan posisi saat itu (bukan 0). `useNowPlaying` meneruskan `data.positionMs`.
+  Contoh: lagu 2:25 yang baru terdeteksi di posisi 1:11 kini langsung mendekati/melewati ambang
+  (72s), bukan menunggu 72s lagi dari nol.
+- **Konservatif:** seed dibatasi `clampSeedMs` — tak pernah melebihi durasi track (atau ambang
+  fallback 4 menit bila durasi tak diketahui), dan 0 bila posisi tak ada; jadi posisi bogus tak
+  bisa memicu scrobble instan yang keliru. Seed HANYA saat track baru — event berikutnya untuk
+  track yang sama tidak me-reseed (tetap memakai akumulasi waktu berjalan).
+- **Dikunci test** (`playbackTimer.test.ts`, +6): seed dari posisi & lanjut berjalan; tanpa
+  positionMs tetap 0 (perilaku lama); seed dipangkas durasi; dipangkas 240s saat durasi 0; lagu
+  yang terdeteksi sudah lewat separuh langsung layak; tidak me-reseed untuk track sama. Total 119
+  test lolos.
+- **Belum divalidasi di device.**
+
+
+### Fixed — deteksi pemutar non-Spotify (mis. YouTube Music) terasa lambat
+- **Gejala dari perangkat:** kartu "Sedang Diamati" muncul cepat untuk Spotify tapi tertunda untuk
+  YouTube Music, padahal deteksinya akhirnya jalan.
+- **Akar:** `onNotificationPosted` di `ScrolaNotificationListener` masih **stub kosong** — listener
+  hanya bereaksi pada `onActiveSessionsChanged`. Sebagian pemutar (khususnya YT Music) mendaftarkan
+  MediaSession-nya ke `MediaSessionManager` beberapa saat setelah notifikasi media-nya muncul, jadi
+  `onActiveSessionsChanged` menyala terlambat dan deteksi ikut lambat. Spotify mendaftarkan sesinya
+  cepat, makanya terasa instan.
+- **Perbaikan:** `onNotificationPosted` kini memindai ulang sesi aktif begitu ada notifikasi
+  **kategori TRANSPORT** (kontrol media) — jalur yang biasanya tampil lebih dulu daripada sesi
+  aktif. Aman & hemat: hanya bereaksi ke notifikasi media (bukan semua notifikasi), di-throttle
+  ~1,2 detik, dan hanya rebind bila **kumpulan paket** sesi berubah (dibandingkan lewat
+  `packageName`, karena `getActiveSessions` mengembalikan instance controller baru tiap panggil) —
+  jadi tidak mengganggu callback yang sudah berjalan untuk sesi yang sama.
+- **Batas jujur:** ini memangkas latensi ketika sesi memang sudah aktif tapi `onActiveSessionsChanged`
+  belum sempat menyala. Bila sebuah pemutar benar-benar mengaktifkan sesinya terlambat, itu di luar
+  kendali kita. Murni perubahan native — **wajib dikonfirmasi di perangkat** (bandingkan jeda
+  deteksi YT Music sebelum vs sesudah).
+
+
+### Added — Statistik Naratif "Bab" (bulanan) & "Album" (tahunan) — Tahap 1–2: logika + UI
+- Lanjutan roadmap naratif setelah Sisi B mingguan: **Bab** = rekap satu bulan, **Album** = rekap
+  satu tahun. Menggunakan agregasi inti yang sama dengan Sisi B (top artis/lagu, total, durasi,
+  penemuan) namun beda rentang & dimensi tren.
+- **Modul murni `babAlbumLogic.ts`** (belum ada UI — sengaja bertahap):
+  - `computeBabStats(monthRows, artistsBeforeMonth)` — tren dibucket per PEKAN dalam bulan (5 slot).
+  - `computeAlbumStats(yearRows, artistsBeforeYear)` — tren dibucket per BULAN (12 slot).
+  - `startOfMonth`/`startOfYear` — bantu hitung rentang query.
+  - Memakai ulang tipe `SisiBRow`/`SisiBTopTrack` (tanpa duplikasi) dan agregasi inti bersama.
+- **Integrasi TIDAK butuh query baru:** cukup `getHistoryInRange(start, end)` +
+  `getDistinctArtistsBefore(start)` yang sudah ada (pola sama dengan SisiBScreen), jadi tahap
+  UI nanti tinggal mengomposisi.
+- **7 test** (`babAlbumLogic.test.ts`): agregasi inti; bucket pekan (Bab) & bulan (Album);
+  penemuan relatif; riwayat kosong; `startOfMonth`/`startOfYear`. Timestamp uji aman-TZ (tengah
+  hari UTC di tanggal tengah-periode). Total 110 test lolos.
+- **Tahap 2 — UI (`BabAlbumScreen.tsx`), didesain ulang untuk orang awam:** alih-alih dashboard
+  angka, layar dibuka dengan satu **kalimat naratif** ("Sepanjang 2026, kamu memutar 842 lagu")
+  dengan angka besar teranyam (bukan telanjang) + count-up halus. Bahasa dipolos-kan (bukan
+  "irama/penemuan/teratas"): "Lagu yang paling sering diputar", "Artis yang paling sering kamu
+  putar", dan grafik **"Kapan kamu mendengar"** yang dijelaskan gamblang — bulan teramai DINAMAI
+  ("Paling ramai di Juni — 95 lagu"), batang puncak disorot, plus baris penjelas "tiap batang satu
+  bulan · makin tinggi, makin banyak". Toggle Bulan/Tahun; entrance bertahap; menghormati
+  prefers-reduced-motion. Helper murni baru `peakBucket` (+3 test) menamai puncak. Empty state
+  mengundang bertindak.
+- **Verifikasi:** `vite build` sukses, `tsc` bersih, 110 test lolos, mockup PIL memvalidasi tata
+  letak Album (12-bar) sebelum device.
+- **Status device:** logika teruji penuh; **tata letak & animasi bar belum dikonfirmasi di
+  perangkat.**
+
+
+### Added — Tiket Koleksi Bernomor Seri (Tahap 1–3: logika + integrasi + UI)
+- Fitur baru pertama pasca-perbaikan inti scrobble: momen tertentu (scrobble ke-100, artis ke-10
+  yang ditemukan, dst.) "mencetak" tiket koleksi bernomor seri unik — memperkuat identitas
+  cetak/tiket Scrola dan menambah mekanik retensi.
+- **Modul murni `ticketSerialLogic.ts`** (belum ada UI/integrasi — sengaja bertahap):
+  - `ticketSerial(kind, ordinal, subject?)` — serial deterministik `SCR-<K>-<NNNNNN>` (mis.
+    `SCR-J-000100`); tiket terkait subjek menyertakan `subjectHash` agar unik antar subjek dengan
+    ordinal sama.
+  - `computeEarnedTickets(rows, config?)` — menurunkan tiket yang sudah diperoleh LANGSUNG dari
+    riwayat (deterministik, tak memutasi input, mengurutkan kronologis sendiri). Karena tiket
+    murni fungsi dari riwayat, **tak butuh tabel/migrasi DB** untuk menampilkannya.
+  - Jenis awal: `jejak` (milestone jumlah scrobble) & `penemuan` (milestone artis unik). Slot
+    `setia`/`beruntun` sudah disiapkan di tipe + jalur serial (dites) untuk tahap berikutnya.
+- **14 test** (`ticketSerialLogic.test.ts`): hash deterministik & 4-char; format serial global vs
+  terkait-subjek; pencetakan tepat di milestone pada timestamp pemicu; normalisasi artis
+  (case+spasi); abai artis kosong; input acak diurutkan; tidak memutasi input; determinisme penuh.
+  Total 99 test lolos.
+- **Tahap 2 — integrasi baca (`queries.ts`):**
+  - Tambahan murni di `ticketSerialLogic.ts`: `sortTicketsForDisplay` (terbaru dulu, stabil, tak
+    memutasi) dan `computeTicketProgress` (total scrobble, artis unik, milestone berikutnya + sisa
+    — hook retensi "N lagi menuju tiket ke-100"). +4 test (total 18 di modul ini, 103 keseluruhan).
+  - `getTicketCollection()`: SATU kali baca riwayat (kolom ringan `artist, track, timestamp`,
+    kronologis) → menurunkan `{ tickets, progress }` lewat fungsi murni. Tetap **tanpa tabel/migrasi
+    DB** — koleksi murni turunan riwayat.
+  - `normalizeArtist` di-ekstrak & dipakai bersama (dedup penemuan konsisten antara koleksi &
+    progres).
+- **Tahap 3 — UI (`TiketKoleksiScreen.tsx`):** layar koleksi overlay (meniru pola SisiBScreen,
+  tema Hutan Malam) yang dibuka dari tombol "Tiket" di header Riwayat. Isi: kartu progres "Menuju
+  berikutnya" (hook retensi: "60 scrobble lagi · tiket ke-100"), daftar sobekan tiket terbaru-dulu,
+  masing-masing dengan tepi perforasi + **cap nomor seri kuningan** (elemen signature: mono,
+  bordered, sedikit miring seperti stempel). Empty state mengarahkan ("tiket pertama tercetak di
+  scrobble pertama"). Di-wire di `App.tsx` (`ticketsOpen`) + prop `onOpenTickets` di HistoryScreen.
+- **Verifikasi:** `vite build` sukses (91 modul, layar baru ikut terkompilasi), `tsc` bersih, 103
+  test lolos, mockup PIL memvalidasi hierarki & cap seri sebelum device.
+- **Status device:** logika (serial/milestone/progres) teruji penuh; **tata letak & animasi UI
+  belum dikonfirmasi di perangkat** — itu gerbang terakhir. Opsional berikutnya: tabel `seen_tickets`
+  bila ingin notif "tiket baru tercetak", dan cap seri di StoryTicket Riwayat.
+
+
+### Fixed — lagu yang diputar Scrola sendiri tidak pernah tercatat + tahan banting lintas pemutar
+- **Gejala:** scrobble dari Spotify jalan, tapi lagu yang diputar oleh pemutar internal Scrola tak
+  pernah masuk Riwayat.
+- **Akar:** pemutar internal adalah MediaSession Media3, dan `MediaMetadata` Media3 **tidak punya
+  field durasi** (durasi ada di timeline player, bukan metadata). Jadi saat sesi internal terbaca
+  `MediaSessionManager`, `METADATA_KEY_DURATION` = 0 → `durationSec` = 0. Di penjadwal kelayakan,
+  durasi 0 membuat `msUntilEligible` = `Infinity`, dan penjadwalan berhenti secara **senyap**
+  (`if (!Number.isFinite(wait)) return`). Sumber eksternal seperti Spotify mengisi durasi dengan
+  benar, makanya lolos; internal tidak.
+- **Perbaikan berlapis (tahan banting apa pun perilaku bridge Media3):**
+  - **Fallback durasi tak dikenal (TS, untuk SEMUA pemutar):** `thresholdMsForDuration()` baru
+    membedakan tiga kasus — durasi tak dilaporkan (`<= 0`) memakai aturan Last.fm **4 menit**
+    (bukan gagal diam-diam), durasi valid `<= 30s` tetap "terlalu pendek" (tak discrobble), durasi
+    `> 30s` memakai 50%/240s. `thresholdMs`/`observedProgress` kini lewat helper ini, jadi pemutar
+    terkenal mana pun yang tak melaporkan durasi tetap tercatat setelah 4 menit.
+  - **Backfill durasi internal (native):** `PlaybackService.lastKnownDurationMs` (`@Volatile`,
+    di-set di main thread saat player READY) menyimpan durasi asli dari timeline. Listener
+    mem-backfill-nya saat `METADATA_KEY_DURATION` = 0 **dan** paketnya milik sendiri — sehingga
+    lagu internal memenuhi ambang di 50% (perilaku benar), bukan sekadar menunggu 4 menit. Aman
+    lintas-thread: listener tak menyentuh objek ExoPlayer, hanya membaca field volatile.
+  - **Fallback field metadata (native):** kalau `ARTIST`/`TITLE` standar kosong, jatuh ke
+    `ALBUM_ARTIST`/`DISPLAY_SUBTITLE` dan `DISPLAY_TITLE` — membantu pemutar yang hanya mengisi
+    field "display". (Peningkatan best-effort; belum diverifikasi pada tiap pemutar.)
+- **Diagnostik baru:** setiap kali track berganti, Log Peristiwa mencetak
+  `sumber: <paket> — <artis> · <judul> · durasi <N>s`. Ini langsung menyingkap di perangkat kenapa
+  satu pemutar tercatat dan lain tidak (mis. durasi 0 terlihat gamblang per app).
+- **Dikunci test** (`playbackTimer.test.ts`, +5): durasi 0 → ambang 240s & layak tepat di 4 menit;
+  membedakan "tak dikenal" (0) dari "terlalu pendek" (`0<dur<=30`); `observedProgress` durasi 0
+  menampilkan bar (bukan tooShort). Total 85 test lolos.
+- **Belum divalidasi di device.** Yang menentukan tetap satu log saat memutar file lokal: cari
+  baris `sumber: com.scrola.app ... durasi <N>s` (harus > 0 berkat backfill) diikuti `enqueue
+  MASUK ... src=com.scrola.app`.
+
+
 ### Fixed — bar "Sedang Diamati" beku dari awal sampai akhir (visual, bukan scrobble)
 - **Gejala dari perangkat:** progress bar di kartu Sedang Diamati diam di posisi awal sepanjang
   lagu, lalu sesekali "melompat", padahal scrobble-nya sendiri berjalan normal.

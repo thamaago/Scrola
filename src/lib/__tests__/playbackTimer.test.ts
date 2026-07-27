@@ -4,8 +4,10 @@ import {
   applyEvent,
   playedMsUntil,
   thresholdMs,
+  thresholdMsForDuration,
   msUntilEligible,
   observedProgress,
+  UNKNOWN_DURATION_FALLBACK_SEC,
 } from '../playbackTimer';
 
 describe('playbackTimer — kelayakan berbasis waktu berlalu', () => {
@@ -101,5 +103,83 @@ describe('observedProgress — bar "Sedang Diamati" dari waktu berlalu', () => {
     const p = observedProgress(200, 99_500); // 0.5s tersisa
     expect(p.remainingSec).toBe(1);
     expect(p.eligible).toBe(false);
+  });
+});
+
+describe('seed posisi saat lagu terdeteksi di tengah pemutaran', () => {
+  it('track baru dengan positionMs -> playedMs di-seed (bukan 0)', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 60_000 }, 1_000);
+    // playedMs awal = 60s; ditambah waktu berjalan sejak `now`
+    expect(playedMsUntil(t, 1_000)).toBe(60_000);
+    expect(playedMsUntil(t, 6_000)).toBe(65_000); // +5s berjalan
+  });
+
+  it('tanpa positionMs -> tetap mulai 0 (perilaku lama terjaga)', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200 }, 0);
+    expect(playedMsUntil(t, 0)).toBe(0);
+  });
+
+  it('seed dibatasi durasi track (posisi tak mungkin > panjang lagu)', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: false, durationSec: 100, positionMs: 999_000 }, 0);
+    expect(t.playedMs).toBe(100_000); // dipangkas ke 100s
+  });
+
+  it('durasi tak diketahui -> seed dibatasi ambang fallback 240s', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: false, durationSec: 0, positionMs: 999_000 }, 0);
+    expect(t.playedMs).toBe(UNKNOWN_DURATION_FALLBACK_SEC * 1000);
+  });
+
+  it('lagu terdeteksi SUDAH lewat separuh -> langsung layak', () => {
+    let t = createTracker();
+    // durasi 200s -> ambang 100s. Terdeteksi di posisi 130s -> sudah lewat.
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 130_000 }, 5_000);
+    expect(msUntilEligible(t, 5_000)).toBe(0);
+  });
+
+  it('seed hanya saat track BARU, tidak diulang untuk event track sama', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 60_000 }, 0);
+    // event berikutnya untuk track sama membawa positionMs lain -> TIDAK me-reseed
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 5_000 }, 10_000);
+    expect(playedMsUntil(t, 10_000)).toBe(70_000); // 60s seed + 10s berjalan, bukan 5s
+  });
+});
+
+describe('durasi tak dilaporkan — fallback 4 menit (tahan banting lintas pemutar)', () => {
+  it('durationSec <= 0 memakai ambang 240 detik, BUKAN dianggap gagal', () => {
+    expect(thresholdMsForDuration(0)).toBe(UNKNOWN_DURATION_FALLBACK_SEC * 1000);
+    expect(thresholdMsForDuration(-1)).toBe(240_000);
+  });
+
+  it('membedakan "durasi tak diketahui" (0) dari "terlalu pendek" (0<dur<=30)', () => {
+    expect(thresholdMsForDuration(20)).toBe(0); // benar-benar pendek: jangan scrobble
+    expect(thresholdMsForDuration(0)).toBe(240_000); // tak dilaporkan: pakai 4 menit
+  });
+
+  it('tracker dengan durasi 0 tetap bisa layak setelah 4 menit diputar', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'X::y', isPlaying: true, durationSec: 0 }, 0);
+    expect(thresholdMs(t)).toBe(240_000);
+    expect(msUntilEligible(t, 0)).toBe(240_000);
+    expect(msUntilEligible(t, 180_000)).toBe(60_000);
+    expect(msUntilEligible(t, 240_000)).toBe(0); // layak tepat di 4 menit
+  });
+
+  it('observedProgress dengan durasi 0: bar TAMPIL (bukan tooShort), pakai 240s', () => {
+    const p = observedProgress(0, 120_000); // 2 menit dari 4 menit
+    expect(p.tooShort).toBe(false);
+    expect(p.thresholdSec).toBe(240);
+    expect(p.progress).toBeCloseTo(0.5, 5);
+    expect(p.remainingSec).toBe(120);
+  });
+
+  it('observedProgress durasi valid tapi <=30s TETAP tooShort (bar disembunyikan)', () => {
+    const p = observedProgress(25, 10_000);
+    expect(p.tooShort).toBe(true);
+    expect(p.thresholdSec).toBe(0);
   });
 });

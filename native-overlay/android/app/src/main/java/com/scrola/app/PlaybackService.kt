@@ -36,6 +36,19 @@ class PlaybackService : MediaSessionService() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var idleStopRunnable: Runnable? = null
 
+    /**
+     * Durasi track internal yang sedang dimuat, di-cache agar bisa dibaca LINTAS-THREAD dengan aman.
+     * ExoPlayer hanya boleh diakses dari main thread, sedangkan ScrolaNotificationListener (yang
+     * perlu durasi ini untuk backfill) berjalan di thread callback MediaController. `@Volatile`
+     * membuat pembacaan aman tanpa menyentuh objek ExoPlayer. Di-update HANYA di main thread saat
+     * player READY. Alasan keberadaannya: MediaMetadata Media3 tidak punya field durasi, jadi
+     * sesi internal muncul di MediaSessionManager tanpa METADATA_KEY_DURATION → tanpa backfill ini
+     * lagu yang diputar Scrola sendiri tak pernah memenuhi ambang scrobble berbasis durasi.
+     */
+    @Volatile
+    var lastKnownDurationMs: Long = 0L
+        private set
+
     override fun onCreate() {
         super.onCreate()
 
@@ -76,7 +89,14 @@ class PlaybackService : MediaSessionService() {
             .build().apply {
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
+                        if (state == Player.STATE_READY) {
+                            // Durasi baru diketahui setelah READY. Simpan ke cache lintas-thread
+                            // supaya listener bisa mem-backfill METADATA_KEY_DURATION yang kosong.
+                            val d = exoPlayer?.duration ?: 0L
+                            if (d > 0L) lastKnownDurationMs = d
+                        }
                         if (state == Player.STATE_ENDED) {
+                            lastKnownDurationMs = 0L
                             PlayerPlugin.emit("playbackEnded", null)
                             scheduleIdleStop()
                         } else {
@@ -127,6 +147,7 @@ class PlaybackService : MediaSessionService() {
 
     fun playUri(uri: String, title: String, artist: String, albumArtBytes: ByteArray? = null) {
         cancelIdleStop()
+        lastKnownDurationMs = 0L // track baru: durasi lama tidak berlaku sampai READY lagi
         val player = exoPlayer ?: return
         val metadataBuilder = androidx.media3.common.MediaMetadata.Builder()
             .setTitle(title)

@@ -4,6 +4,8 @@ import NowPlayingScreen from './screens/NowPlayingScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SisiBScreen from './screens/SisiBScreen';
+import TiketKoleksiScreen from './screens/TiketKoleksiScreen';
+import BabAlbumScreen from './screens/BabAlbumScreen';
 import { loadSession } from './lib/secureStore';
 import { useNowPlayingListener } from './hooks/useNowPlaying';
 import { useScrobbleHistory } from './hooks/useScrobbleHistory';
@@ -22,6 +24,8 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [tab, setTab] = useState<Tab>('now');
   const [sisiBOpen, setSisiBOpen] = useState(false);
+  const [ticketsOpen, setTicketsOpen] = useState(false);
+  const [babAlbumOpen, setBabAlbumOpen] = useState(false);
   // id entri riwayat yang BARU tercatat — untuk border amber + animasi masuk di HistoryScreen.
   const [freshScrobbleId, setFreshScrobbleId] = useState<number | null>(null);
   const prevTopIdRef = useRef<number | null>(null);
@@ -116,6 +120,7 @@ export default function App() {
                 items={historyItems}
                 freshId={freshScrobbleId}
                 onOpenSisiB={() => setSisiBOpen(true)}
+                onOpenTickets={() => setTicketsOpen(true)}
                 onToggleLoved={(entry) => void toggleLoved(entry)}
                 onDeleteEntry={(entry) => void deleteEntry(entry)}
                 onUpdateEntry={(entry, fields) => void updateEntry(entry, fields)}
@@ -134,7 +139,17 @@ export default function App() {
       })}
 
       {/* Overlay Sisi B — slide-up di atas segalanya termasuk nav */}
-      <SisiBScreen open={sisiBOpen} onClose={() => setSisiBOpen(false)} />
+      <SisiBScreen
+        open={sisiBOpen}
+        onClose={() => setSisiBOpen(false)}
+        onOpenBabAlbum={() => setBabAlbumOpen(true)}
+      />
+
+      {/* Overlay Bab (bulan) & Album (tahun) */}
+      <BabAlbumScreen open={babAlbumOpen} onClose={() => setBabAlbumOpen(false)} />
+
+      {/* Overlay Koleksi Tiket */}
+      <TiketKoleksiScreen open={ticketsOpen} onClose={() => setTicketsOpen(false)} />
 
       <nav className="fixed bottom-0 inset-x-0 bg-surface border-t border-white/5 flex z-10">
         {TABS.map(([t, label]) => (

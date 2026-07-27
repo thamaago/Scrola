@@ -1,6 +1,27 @@
 import { scrobbleThresholdSec } from './scrobbleLogic';
 
 /**
+ * Ambang cadangan (detik) saat DURASI track TIDAK DILAPORKAN oleh sumber (durationSec <= 0).
+ * Sebagian pemutar terkenal tidak selalu menaruh METADATA_KEY_DURATION di MediaSession (atau
+ * menaruhnya terlambat). Tanpa durasi kita tak bisa menghitung "50% durasi", jadi kita pakai
+ * aturan Last.fm yang lain: scrobble setelah track diputar >= 4 menit (mana yang lebih dulu).
+ * Ini membuat deteksi tahan banting lintas pemutar, bukan diam-diam gagal.
+ */
+export const UNKNOWN_DURATION_FALLBACK_SEC = 240;
+
+/**
+ * Ambang scrobble dalam MS untuk sebuah durasi. Tiga kasus:
+ *  - durasi tak dilaporkan (<= 0): pakai aturan 4 menit (UNKNOWN_DURATION_FALLBACK_SEC).
+ *  - durasi valid tapi <= 30s: 0 (terlalu pendek — spek Last.fm melarang scrobble).
+ *  - durasi > 30s: min(50% durasi, 240s).
+ */
+export function thresholdMsForDuration(durationSec: number): number {
+  if (durationSec <= 0) return UNKNOWN_DURATION_FALLBACK_SEC * 1000;
+  if (durationSec <= 30) return 0;
+  return scrobbleThresholdSec(durationSec) * 1000;
+}
+
+/**
  * playbackTimer.ts — memutuskan kelayakan scrobble dari WAKTU BERLALU, bukan dari `position`
  * MediaSession.
  *
@@ -48,8 +69,7 @@ export function playedMsUntil(t: PlaybackTracker, now: number): number {
  * Ambang scrobble dalam MS untuk track ini. 0 kalau durasi tak valid (belum bisa dihitung).
  */
 export function thresholdMs(t: PlaybackTracker): number {
-  if (t.durationSec <= 30) return 0;
-  return scrobbleThresholdSec(t.durationSec) * 1000;
+  return thresholdMsForDuration(t.durationSec);
 }
 
 /**
@@ -60,16 +80,30 @@ export function thresholdMs(t: PlaybackTracker): number {
  * @param ev.durationSec durasi track
  * @param now waktu sekarang (ms)
  */
+/**
+ * Batasi seed posisi awal agar masuk akal: tak pernah melebihi durasi track (atau ambang fallback
+ * 4 menit bila durasi tak diketahui), dan 0 bila posisi tak ada/negatif. Mencegah posisi bogus
+ * memicu scrobble instan yang keliru.
+ */
+function clampSeedMs(positionMs: number | undefined, durationSec: number): number {
+  if (!positionMs || positionMs <= 0) return 0;
+  const maxMs = (durationSec > 0 ? durationSec : UNKNOWN_DURATION_FALLBACK_SEC) * 1000;
+  return Math.min(positionMs, maxMs);
+}
+
 export function applyEvent(
   t: PlaybackTracker,
-  ev: { trackKey: string; isPlaying: boolean; durationSec: number },
+  ev: { trackKey: string; isPlaying: boolean; durationSec: number; positionMs?: number },
   now: number
 ): PlaybackTracker {
-  // Track berganti -> mulai hitung dari nol.
+  // Track berganti -> mulai tracker baru. SEED dengan posisi saat ini kalau lagu terdeteksi di
+  // TENGAH pemutaran: tanpa seed, lagu yang baru terdeteksi (mis. karena deteksi pemutar agak
+  // lambat) dihitung dari 0 sehingga scrobble-nya tertunda — atau terlewat sama sekali kalau lagu
+  // keburu habis sebelum ambang tercapai. Seed dibatasi clampSeedMs agar konservatif.
   if (ev.trackKey !== t.trackKey) {
     return {
       trackKey: ev.trackKey,
-      playedMs: 0,
+      playedMs: clampSeedMs(ev.positionMs, ev.durationSec),
       playingSince: ev.isPlaying ? now : null,
       durationSec: ev.durationSec,
     };
@@ -119,8 +153,10 @@ export interface ObservedProgress {
  * turun seiring timer scrobble sungguhan, bukan angka mati.
  */
 export function observedProgress(durationSec: number, playedMs: number): ObservedProgress {
-  const tooShort = !(durationSec > 30);
-  const thresholdSec = tooShort ? 0 : scrobbleThresholdSec(durationSec);
+  const thresholdSec = thresholdMsForDuration(durationSec) / 1000;
+  // "tooShort" hanya benar-benar untuk durasi valid <= 30s (ambang 0). Durasi tak dilaporkan
+  // BUKAN tooShort — ia memakai fallback 4 menit, jadi bar tetap ditampilkan.
+  const tooShort = thresholdSec <= 0;
   const playedSec = Math.max(0, playedMs / 1000);
   if (thresholdSec <= 0) {
     return { tooShort, thresholdSec: 0, playedSec, progress: 0, remainingSec: 0, eligible: false };

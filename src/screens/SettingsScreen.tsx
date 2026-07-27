@@ -38,6 +38,7 @@ export default function SettingsScreen({
     lastEventPackage: string;
     totalEvents: number;
     activeSessions: number;
+    detectedPackages?: string[];
     androidSdk: number;
     manufacturer: string;
   } | null>(null);
@@ -298,6 +299,24 @@ export default function SettingsScreen({
                   {listenerDiag.lastEventAtMs > 0 &&
                     ` · ${Math.round((Date.now() - listenerDiag.lastEventAtMs) / 1000)} detik lalu`}
                 </p>
+              )}
+
+              {listenerDiag.detectedPackages && listenerDiag.detectedPackages.length > 0 && (
+                <div className="mt-3">
+                  <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase mb-1.5">
+                    Sumber terdeteksi ({listenerDiag.detectedPackages.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {listenerDiag.detectedPackages.map((pkg) => (
+                      <span
+                        key={pkg}
+                        className="font-mono text-[11px] text-amber bg-amber/10 border border-amber/25 rounded-full px-2.5 py-1"
+                      >
+                        {sourceLabel(pkg)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {/* Saran perbaikan SPESIFIK untuk lapis pertama yang gagal */}

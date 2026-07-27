@@ -84,6 +84,12 @@ class NowPlayingPlugin : Plugin() {
         result.put("lastEventPackage", ScrolaNotificationListener.lastEventPackage ?: "")
         result.put("totalEvents", ScrolaNotificationListener.totalEvents)
         result.put("activeSessions", ScrolaNotificationListener.activeSessionCount)
+        // Daftar paket pemutar yang pernah terbaca — untuk verifikasi cakupan lintas-pemutar.
+        val pkgs = org.json.JSONArray()
+        synchronized(ScrolaNotificationListener.detectedPackages) {
+            ScrolaNotificationListener.detectedPackages.forEach { pkgs.put(it) }
+        }
+        result.put("detectedPackages", pkgs)
         result.put("androidSdk", android.os.Build.VERSION.SDK_INT)
         result.put("manufacturer", android.os.Build.MANUFACTURER)
         call.resolve(result)

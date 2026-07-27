@@ -104,6 +104,12 @@ export function useNowPlayingListener() {
       // sama persis.
       if (!isSameTrack) {
         scrobbledTrackKeyRef.current = null;
+        // Diagnostik lintas-pemutar: cetak sumber + durasi yang BENAR-BENAR terbaca dari
+        // MediaSession-nya. Ini yang menyingkap kenapa satu pemutar tercatat dan lain tidak —
+        // mis. durasi 0 (tak dilaporkan) langsung terlihat di sini, per paket app.
+        diag(
+          `sumber: ${data.packageName || '?'} — ${meta.artist || '(tanpa artis)'} · ${meta.title || '(tanpa judul)'} · durasi ${meta.durationSec}s`
+        );
       }
 
       setCurrent((prev) => ({
@@ -156,12 +162,14 @@ export function useNowPlayingListener() {
       const trackKey = `${meta.artist}::${meta.title}`;
       const now = Date.now();
 
-      // Perbarui tracker WAKTU BERLALU. Kita TIDAK lagi memakai `positionSec` untuk memutuskan
-      // kelayakan — position dari MediaSession mandek kalau lagu diputar lurus (lihat
-      // playbackTimer.ts). Kita hitung sendiri berapa lama track benar-benar diputar.
+      // Perbarui tracker WAKTU BERLALU. Kita TIDAK memakai `positionSec` sebagai sinyal kelayakan
+      // yang berjalan (position dari MediaSession mandek kalau lagu diputar lurus — lihat
+      // playbackTimer.ts). TAPI kita meneruskan positionMs sebagai SEED awal: kalau lagu baru
+      // terdeteksi di tengah pemutaran (mis. deteksi pemutar agak lambat), tracker mulai dari
+      // posisi itu, bukan 0 — supaya scrobble tidak tertunda/terlewat. Seed dibatasi di applyEvent.
       trackerRef.current = applyEvent(
         trackerRef.current,
-        { trackKey, isPlaying, durationSec: meta.durationSec },
+        { trackKey, isPlaying, durationSec: meta.durationSec, positionMs: data.positionMs ?? 0 },
         now
       );
 

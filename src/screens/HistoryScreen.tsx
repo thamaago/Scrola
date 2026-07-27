@@ -16,6 +16,7 @@ export default function HistoryScreen({
   items,
   freshId,
   onOpenSisiB,
+  onOpenTickets,
   onToggleLoved,
   onDeleteEntry,
   onUpdateEntry,
@@ -25,6 +26,7 @@ export default function HistoryScreen({
   /** id entri yang BARU saja tercatat — diberi border amber + animasi masuk */
   freshId?: number | null;
   onOpenSisiB: () => void;
+  onOpenTickets: () => void;
   onToggleLoved: (entry: HistoryEntry) => void;
   onDeleteEntry: (entry: HistoryEntry) => void;
   onUpdateEntry: (entry: HistoryEntry, fields: { artist: string; track: string; album?: string }) => void;
@@ -56,16 +58,27 @@ export default function HistoryScreen({
     <div className="min-h-screen px-4 pt-8 pb-24">
       <div className="flex justify-between items-center mx-2 mb-[18px]">
         <h1 className="font-display text-2xl font-semibold text-paper">Riwayat</h1>
-        <button
-          onClick={onOpenSisiB}
-          className="flex items-center gap-2 bg-surfaceRaised border border-amber/25 rounded-full py-[7px] px-3.5 active:scale-[0.98] transition-transform"
-          aria-label="Buka rekap mingguan Sisi B"
-        >
-          <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase whitespace-nowrap">
-            {babLabel}
-          </span>
-          <span className="text-muted text-xs">→</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenTickets}
+            className="flex items-center gap-1.5 bg-surfaceRaised border border-amber/25 rounded-full py-[7px] px-3.5 active:scale-[0.98] transition-transform"
+            aria-label="Buka koleksi tiket"
+          >
+            <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase whitespace-nowrap">
+              Tiket
+            </span>
+          </button>
+          <button
+            onClick={onOpenSisiB}
+            className="flex items-center gap-2 bg-surfaceRaised border border-amber/25 rounded-full py-[7px] px-3.5 active:scale-[0.98] transition-transform"
+            aria-label="Buka rekap mingguan Sisi B"
+          >
+            <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase whitespace-nowrap">
+              {babLabel}
+            </span>
+            <span className="text-muted text-xs">→</span>
+          </button>
+        </div>
       </div>
 
       {items.length === 0 ? (

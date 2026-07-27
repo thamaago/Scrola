@@ -1,5 +1,13 @@
 import { getDb, runWriteWithRecovery } from './db';
 import type { TrackInfo } from '../lastfm';
+import {
+  computeEarnedTickets,
+  computeTicketProgress,
+  sortTicketsForDisplay,
+  type CollectibleTicket,
+  type TicketProgress,
+  type TicketRow,
+} from '../ticketSerialLogic';
 
 export interface QueuedRow extends TrackInfo {
   id: number;
@@ -255,5 +263,30 @@ export async function getAccountStats(): Promise<{ totalScrobbles: number; first
   return {
     totalScrobbles: total,
     firstYear: firstTs ? new Date(firstTs * 1000).getFullYear() : null,
+  };
+}
+
+/**
+ * Turunkan koleksi tiket + progres milestone LANGSUNG dari riwayat. Tiket adalah fungsi murni
+ * deterministik dari riwayat (lihat ticketSerialLogic.ts), jadi tak ada tabel/state tersimpan —
+ * cukup baca kolom ringan (artist, track, timestamp) untuk SELURUH riwayat secara kronologis lalu
+ * hitung. Satu kali baca dipakai untuk keduanya supaya tidak query dua kali.
+ */
+export async function getTicketCollection(): Promise<{
+  tickets: CollectibleTicket[];
+  progress: TicketProgress;
+}> {
+  const db = await getDb();
+  const res = await db.query(
+    `SELECT artist, track, timestamp FROM scrobble_history ORDER BY timestamp ASC;`
+  );
+  const rows = ((res.values as TicketRow[]) ?? []).map((r) => ({
+    artist: r.artist ?? '',
+    track: r.track ?? '',
+    timestamp: r.timestamp ?? 0,
+  }));
+  return {
+    tickets: sortTicketsForDisplay(computeEarnedTickets(rows)),
+    progress: computeTicketProgress(rows),
   };
 }
