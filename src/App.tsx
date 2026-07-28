@@ -7,7 +7,8 @@ import SisiBScreen from './screens/SisiBScreen';
 import TiketKoleksiScreen from './screens/TiketKoleksiScreen';
 import BabAlbumScreen from './screens/BabAlbumScreen';
 import { loadSession } from './lib/secureStore';
-import { useNowPlayingListener } from './hooks/useNowPlaying';
+import { useNowPlayingListener, drainAndFlushNative } from './hooks/useNowPlaying';
+import { App as CapApp } from '@capacitor/app';
 import { useScrobbleHistory } from './hooks/useScrobbleHistory';
 import { flushQueue } from './lib/scrobbleEngine';
 
@@ -49,14 +50,39 @@ export default function App() {
       });
   }, []);
 
-  // Coba kirim antrean scrobble yang mungkin tertunda setiap kali app dibuka/session siap.
-  useEffect(() => {
-    if (username) {
-      flushQueue()
-        .then(reloadHistory)
-        .catch((e) => console.warn('Gagal flush antrean scrobble saat startup:', e));
+  // Sinkronisasi scrobble: serap yang ditangkap NATIVE di latar (Opsi 2), kirim sisa antrean,
+  // lalu muat ulang riwayat. Native menangkap lagu walau app tertutup; JS mengirimnya saat aktif.
+  const syncScrobbles = useCallback(async () => {
+    try {
+      await drainAndFlushNative();
+      await flushQueue();
+      await reloadHistory();
+    } catch (e) {
+      console.warn('Sinkronisasi scrobble gagal:', e);
     }
-  }, [username, reloadHistory]);
+  }, [reloadHistory]);
+
+  // Saat app dibuka / session siap.
+  useEffect(() => {
+    if (username) void syncScrobbles();
+  }, [username, syncScrobbles]);
+
+  // Saat app kembali ke foreground + interval berkala selagi aktif — supaya scrobble yang
+  // terkumpul di latar cepat terkirim, dan yang terjadi saat app terbuka pun tak menunggu lama.
+  useEffect(() => {
+    if (!username) return;
+    let handle: { remove: () => void } | undefined;
+    void CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) void syncScrobbles();
+    }).then((h) => {
+      handle = h;
+    });
+    const id = setInterval(() => void syncScrobbles(), 20000);
+    return () => {
+      handle?.remove();
+      clearInterval(id);
+    };
+  }, [username, syncScrobbles]);
 
   // Deteksi entri riwayat baru: kalau id teratas berubah setelah reload, tandai sebagai "fresh"
   // sebentar (untuk border amber + animasi fadeSlideIn), lalu lepas tandanya.

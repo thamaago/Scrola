@@ -6,6 +6,8 @@ import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.service.notification.NotificationListenerService
 import android.util.Log
 import org.json.JSONObject
@@ -88,6 +90,21 @@ class ScrolaNotificationListener : NotificationListenerService() {
 
     /** Waktu pindai-ulang terakhir, untuk throttle onNotificationPosted (hindari pindai berlebihan). */
     private var lastRescanMs: Long = 0L
+
+    // ---- Jalur scrobble LATAR (native) — Opsi 2 ----
+    // Kelayakan + penangkapan scrobble berjalan di sini (di dalam listener yang hidup di latar),
+    // BUKAN di JS/WebView yang dibekukan saat app ditutup. Lagu yang layak disimpan ke
+    // PendingScrobbleStore; JS menyerapnya dan mengirim ke Last.fm saat app aktif.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var tracker = ScrobbleTracker.create()
+    private var trackStartedAtSec = 0L
+    private var scrobbledTrackKey: String? = null
+    private var eligibilityRunnable: Runnable? = null
+    private var curArtist = ""
+    private var curTitle = ""
+    private var curAlbum = ""
+    private var curDurationSec = 0
+    private var curSourcePackage = ""
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         rebindControllers(controllers ?: emptyList())
@@ -202,11 +219,21 @@ class ScrolaNotificationListener : NotificationListenerService() {
             durationMs = PlaybackService.instance?.lastKnownDurationMs ?: 0L
         }
 
+        val album = metadata.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM) ?: ""
+
+        // Simpan metadata terakhir untuk jalur scrobble LATAR native (dipakai processNativeTracker
+        // yang dipanggil dari emitPlaybackState). Durasi memakai hasil backfill di atas.
+        curArtist = artist
+        curTitle = title
+        curAlbum = album
+        curDurationSec = if (durationMs > 0L) (durationMs / 1000L).toInt() else 0
+        curSourcePackage = controller.packageName ?: ""
+
         val payload = JSONObject().apply {
             put("packageName", controller.packageName)
             put("artist", artist)
             put("title", title)
-            put("album", metadata.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM) ?: "")
+            put("album", album)
             put("durationMs", durationMs)
         }
         noteEvent(controller.packageName)
@@ -239,12 +266,79 @@ class ScrolaNotificationListener : NotificationListenerService() {
         NowPlayingPlugin.emit("playbackStateChanged", payload)
 
         val isPlaying = state.state == PlaybackState.STATE_PLAYING
+        // Jalankan tracker kelayakan NATIVE (jalur scrobble latar). Berjalan walau WebView tidur.
+        processNativeTracker(isPlaying, state.position)
+
         val metadata = controller.metadata
         val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE) ?: ""
         if (title.isNotEmpty()) {
             val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST) ?: ""
             ScrobbleForegroundService.update(applicationContext, artist, title, isPlaying)
         }
+    }
+
+    /**
+     * Memperbarui tracker kelayakan native dari sebuah event playback dan menjadwalkan ulang
+     * pengecekan kelayakan. Dipanggil dari emitPlaybackState (thread callback MediaController).
+     */
+    private fun processNativeTracker(isPlaying: Boolean, positionMs: Long) {
+        val artist = curArtist
+        val title = curTitle
+        if (artist.isEmpty() && title.isEmpty()) return
+        val trackKey = "$artist::$title"
+        val now = System.currentTimeMillis()
+
+        val prevKey = tracker.trackKey
+        tracker = ScrobbleTracker.applyEvent(tracker, trackKey, isPlaying, curDurationSec, positionMs, now)
+
+        if (trackKey != prevKey) {
+            // Track baru: reset penanda + catat waktu mulai (timestamp scrobble, spek Last.fm).
+            scrobbledTrackKey = null
+            trackStartedAtSec = now / 1000L
+        }
+        rescheduleEligibility(trackKey)
+    }
+
+    /**
+     * Pasang (atau ganti) timer yang berbunyi tepat saat track memenuhi ambang. Memakai mainHandler
+     * (main looper) yang tetap hidup selama proses hidup — jadi berbunyi WALAU app tertutup. Saat
+     * berbunyi, verifikasi ulang lalu simpan ke PendingScrobbleStore (tanpa filter preferensi;
+     * filter "scrobble dari app lain" diterapkan JS saat menyerap).
+     */
+    private fun rescheduleEligibility(trackKey: String) {
+        eligibilityRunnable?.let { mainHandler.removeCallbacks(it) }
+        eligibilityRunnable = null
+        if (scrobbledTrackKey == trackKey) return
+
+        val wait = ScrobbleTracker.msUntilEligible(tracker, System.currentTimeMillis())
+        if (wait == ScrobbleTracker.NEVER) return
+
+        // Snapshot data track SEKARANG (closure) supaya benar walau cur* berubah saat timer menunggu.
+        val artist = curArtist
+        val title = curTitle
+        val album = curAlbum
+        val durationSec = curDurationSec
+        val sourcePackage = curSourcePackage
+        val startedAt = trackStartedAtSec
+
+        val r = Runnable {
+            eligibilityRunnable = null
+            val tr = tracker
+            if (tr.trackKey != trackKey) return@Runnable
+            if (ScrobbleTracker.msUntilEligible(tr, System.currentTimeMillis()) > 0L) return@Runnable
+            if (scrobbledTrackKey == trackKey) return@Runnable
+            scrobbledTrackKey = trackKey
+            PendingScrobbleStore.append(
+                applicationContext,
+                PendingScrobbleStore.Record(artist, title, album, durationSec, startedAt, sourcePackage)
+            )
+            NativeEventLog.append(
+                applicationContext,
+                "LATAR: layak & disimpan (pending) — $artist - $title (src=$sourcePackage)"
+            )
+        }
+        eligibilityRunnable = r
+        mainHandler.postDelayed(r, wait)
     }
 
     override fun onDestroy() {

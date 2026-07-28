@@ -17,6 +17,78 @@ tooling).
 
 ## [Unreleased]
 
+### Added — Scrobble di LATAR belakang (Opsi 2, Tahap 2–3: kelayakan native + serap JS)
+- **Menyelesaikan pemindahan pipeline kelayakan ke native** supaya scrobble tetap berjalan saat app
+  ditutup/di-latar-kan (WebView dibekukan → timer JS mati; itu sebabnya dulu hanya lagu yang diputar
+  saat app terbuka yang tercatat).
+- **Tahap 2 — penangkapan native di latar:**
+  - `PendingScrobbleStore.kt` — antrean tangkapan append-only (format base64+tab agar bebas masalah
+    escaping judul/artis; **9 tes Kotlin** untuk encode/decode/parse termasuk tab/newline/emoji/baris
+    rusak). Terpisah dari DB Capacitor (hindari path non-standar + lock lintas-proses).
+  - `NativeEventLog.kt` — penulis Log Peristiwa bersama & ter-sinkronisasi (dipakai JS via
+    DiagnosticsPlugin dan jalur latar native), agar scrobble-latar TERLIHAT di log
+    (`LATAR: layak & disimpan (pending) — …`).
+  - `ScrolaNotificationListener` kini menjalankan `ScrobbleTracker` (Tahap 1) + timer kelayakan
+    `Handler.postDelayed` di main looper. Saat sebuah track memenuhi ambang, disimpan ke
+    PendingScrobbleStore — **walau app tertutup**. Callback MediaController & Runnable sama-sama di
+    main looper, jadi akses tracker single-thread (tanpa race).
+- **Tahap 3 — serap + kirim dari JS:**
+  - `NowPlayingPlugin.drainPendingScrobbles()` — menyerap & mengosongkan store.
+  - `drainAndFlushNative()` (JS) — menyerap, memfilter preferensi "scrobble dari app lain", lalu
+    enqueue + kirim ke Last.fm. Dedup dijaga `UNIQUE(artist,track,timestamp)` di antrean.
+  - `App` memanggilnya saat startup, saat kembali foreground (`appStateChange`), dan tiap 20 detik
+    selagi aktif — jadi tangkapan latar cepat terkirim.
+  - **Kelayakan/enqueue sisi JS DINONAKTIFKAN** (timer di `useNowPlaying` dibuang) agar tak dobel
+    dengan native. Tracker JS dipertahankan HANYA untuk bar "Sedang Diamati".
+- **Batas jujur:** logika murni (tracker + store) divalidasi 31 tes Kotlin di sini, tapi INTEGRASI
+  native (wiring listener, Handler timer di latar, jembatan plugin, I/O file) **hanya bisa dibuktikan
+  di CI build + perangkat**. Yang perlu diuji: putar musik di Spotify/YT Music dengan Scrola
+  TERTUTUP beberapa lagu, lalu buka Scrola — Riwayat harus terisi SEMUA lagu (dengan timestamp
+  aslinya), dan Log Peristiwa memuat baris `LATAR: …`.
+
+
+### Added — Scrobble di LATAR belakang (Opsi 2, Tahap 1: tracker kelayakan native)
+- **Menutup isu paling fundamental:** kelayakan + enqueue scrobble dulu berjalan di JS (WebView),
+  yang DIBEKUKAN Android saat app ditutup/di-latar-kan — sehingga lagu yang diputar di latar tak
+  pernah memenuhi ambang, dan hanya lagu yang diputar saat app terbuka yang tercatat. (Deteksi
+  sudah native/latar; yang belum adalah kelayakan.)
+- **Desain Opsi 2 (hibrida, tahan banting):** native melakukan deteksi + kelayakan + simpan ke
+  penyimpanan native sendiri (append-only) di LATAR; JS menyerapnya lalu mengirim ke Last.fm saat
+  app dibuka. Karena scrobble Last.fm membawa timestamp, lagu tetap tercatat dengan waktu aslinya.
+  Sengaja TIDAK menulis langsung ke DB @capacitor-community/sqlite dari native (path non-standar +
+  risiko lock lintas-proses) — penyimpanan native yang terpisah lebih aman.
+- **Tahap 1 — `ScrobbleTracker.kt`:** port SETIA dari `playbackTimer.ts` (tracker waktu-berlalu,
+  ambang, fallback durasi tak dikenal 4 menit, seed posisi, `msUntilEligible` dengan sentinel
+  `Long.MAX_VALUE` = Infinity). Murni tanpa dependensi Android → **divalidasi dengan 22 tes Kotlin
+  sungguhan** (dikompilasi kotlinc + dijalankan), cocok 1:1 dengan 22 kasus vitest sisi TS. Logika
+  dijaga identik di kedua sisi; DB tidak terenkripsi (`no-encryption`, `scrola.db`) dikonfirmasi.
+- **Tahap berikutnya (belum dikerjakan):** (2) penyimpanan "pending scrobbles" native + Handler
+  timer di NotificationListener yang memanggil tracker ini di latar; (3) plugin `drainPendingScrobbles()`
+  + JS menyerap saat app dibuka → enqueue → kirim Last.fm, dan MENONAKTIFKAN kelayakan/enqueue sisi
+  JS (agar tak dobel dengan native). Integrasi native ini **wajib divalidasi di CI + perangkat**.
+
+
+### Fixed — pemutar internal di-scrobble GANDA (dua jalur enqueue)
+- **Bukti dari log perangkat:** memutar file lokal via Scrola menghasilkan DUA `enqueue MASUK …
+  (src=com.scrola.app)` dan dua `addToQueue OK` untuk satu lagu. Pemutar internal ternyata
+  discrobble oleh dua jalur sekaligus: (A) efek `maybeScrobble()` lama di `NowPlayingScreen`
+  (berbasis posisi), dan (B) jalur listener → tracker waktu-berlalu (yang kini mendeteksi sesi
+  `com.scrola.app` dengan benar sejak durasi di-backfill).
+- **Kenapa berbahaya:** kali ini scrobble ganda tertolak `UNIQUE(artist, track, timestamp)` di
+  antrean, tapi rapuh — kalau kedua jalur menghitung timestamp yang sedikit berbeda, keduanya
+  lolos dan menjadi **scrobble ganda di profil Last.fm** pengguna.
+- **Perbaikan:** hapus jalur A (efek `maybeScrobble` + `startedAtRef` + `resetScrobbleGuard` di
+  `NowPlayingScreen`). Jalur A adalah peninggalan dari masa ketika listener belum melihat sesi
+  internal; kini redundan. Pemutar internal discrobble lewat jalur yang SAMA dengan sumber
+  eksternal (listener → tracker), yang malah lebih baik karena tetap jalan di latar. Panggung
+  tiket di NowPlayingScreen tetap murni VISUAL (tidak lagi men-scrobble).
+- **Catatan deteksi:** log yang sama mengonfirmasi deteksi & pencatatan internal BEKERJA penuh
+  (`enqueue … src=com.scrola.app` → `addToQueue OK` → `Last.fm terima 1/1` → `addHistoryBatch OK`),
+  dan panel "Sumber terdeteksi" di Pengaturan menampilkan Spotify, YouTube Music, dan Scrola.
+- **Belum divalidasi di device** setelah perubahan ini — yang perlu dicek: memutar file lokal kini
+  hanya menghasilkan SATU `enqueue MASUK src=com.scrola.app` (bukan dua).
+
+
 ### Fixed — deteksi lintas-pemutar: sesi yang mulai dalam keadaan PAUSE lalu di-play tak terbaca
 - **Akar:** callback `onPlaybackStateChanged` hanya memanggil `emitPlaybackState`, TIDAK
   `emitNowPlaying`. Padahal `emitNowPlaying` (yang memancarkan metadata/track `nowPlayingChanged`)

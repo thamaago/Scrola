@@ -5,7 +5,6 @@ import SeekTimeline from '../components/SeekTimeline';
 import { usePlayer } from '../hooks/usePlayer';
 import { scrobbleThresholdSec } from '../lib/scrobbleLogic';
 import { observedProgress } from '../lib/playbackTimer';
-import { maybeScrobble, resetScrobbleGuard } from '../lib/scrobbleEngine';
 import NoteEditor from '../components/NoteEditor';
 import { hasNote, normalizeNoteForSave } from '../lib/noteLogic';
 import { saveOrHoldNote, getPendingNote } from '../lib/pendingNotes';
@@ -65,42 +64,18 @@ export default function NowPlayingScreen({
     current && current.packageName !== 'com.scrola.app' ? current : null;
   const lastTrackKeyRef = useRef<string | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  // Kapan track internal MULAI diputar — timestamp scrobble (spek Last.fm: waktu mulai).
-  const startedAtRef = useRef(Math.floor(Date.now() / 1000));
 
-  // Picu scrobble untuk PLAYER INTERNAL. Ini menutup celah arsitektur: player internal mengirim
-  // event lewat plugin Player (playerPositionChanged) yang tidak didengarkan useNowPlaying, jadi
-  // sebelumnya lagu yang diputar di dalam Scrola TIDAK PERNAH tercatat. maybeScrobble() terpusat
-  // memakai aturan eligibility + guard anti-dobel yang SAMA dengan jalur eksternal.
-  //
-  // Ditempatkan di sini (bukan App) karena NowPlayingScreen-lah yang memegang player.state via
-  // usePlayer. Konsekuensinya: pengecekan hanya jalan saat tab ini ter-render. Untuk player
-  // INTERNAL itu dapat diterima — memutar lagu di Scrola berarti pengguna sedang di layar ini;
-  // scrobble tetap ter-enqueue begitu ambang tercapai walau kemudian pindah tab, karena guard
-  // mencegah pengiriman ganda dan flushQueue berjalan di latar.
+  // CATATAN ARSITEKTUR: dulu di sini ada efek maybeScrobble() khusus player internal, karena
+  // useNowPlaying/listener belum mendeteksi sesi MediaSession milik player internal. Sejak listener
+  // membaca sesi `com.scrola.app` dengan benar (durasi di-backfill, lihat ScrolaNotificationListener),
+  // player internal discrobble lewat jalur yang SAMA dengan sumber eksternal (listener → tracker
+  // waktu-berlalu → enqueue). Efek lama itu DIHAPUS karena menyebabkan enqueue GANDA (dua
+  // `enqueue MASUK src=com.scrola.app` untuk satu lagu) — sejauh ini tertolak UNIQUE(artist,track,
+  // timestamp), tapi rapuh: timestamp yang sedikit berbeda antar jalur bisa lolos jadi scrobble
+  // ganda di Last.fm. Panggung tiket di bawah tetap murni VISUAL (tidak lagi men-scrobble).
+
+  // Reset draft catatan tiap kali track berganti.
   useEffect(() => {
-    if (!player.track || !player.state) return;
-    const pos = Math.floor((player.state.positionMs ?? 0) / 1000);
-    const dur = Math.floor((player.state.durationMs ?? 0) / 1000);
-    maybeScrobble({
-      artist: player.track.artist,
-      track: player.track.title,
-      album: undefined,
-      durationSec: dur,
-      positionSec: pos,
-      startedAtSec: startedAtRef.current,
-      sourcePackage: 'com.scrola.app',
-    }).then((didScrobble) => {
-      if (didScrobble) onScrobbled?.();
-    });
-  }, [player.track, player.state, onScrobbled]);
-
-  // Reset penanda mulai + guard tiap kali track berganti, supaya lagu yang sama bisa tercatat
-  // lagi kalau diputar ulang nanti.
-  useEffect(() => {
-    startedAtRef.current = Math.floor(Date.now() / 1000);
-    if (player.track) resetScrobbleGuard(player.track.artist, player.track.title);
-
     // Draft catatan WAJIB direset saat lagu berganti — tanpa ini, catatan lagu sebelumnya
     // terbawa dan bisa tersimpan ke tiket yang salah. Kalau lagu baru ini punya catatan yang
     // masih tertunda (ditulis lalu app sempat berpindah lagu dan kembali), tampilkan lagi.

@@ -5,11 +5,20 @@ import { diag } from '../lib/diagnostics';
 import {
   createTracker,
   applyEvent,
-  msUntilEligible,
   playedMsUntil,
   type PlaybackTracker,
 } from '../lib/playbackTimer';
 import { getExternalScrobbleEnabled } from '../lib/preferences';
+
+/** Satu scrobble yang ditangkap di latar oleh native, menunggu dikirim ke Last.fm. */
+export interface NativePendingScrobble {
+  artist: string;
+  track: string;
+  album: string;
+  durationSec: number;
+  timestamp: number; // unix seconds (waktu mulai track)
+  sourcePackage: string;
+}
 
 export interface NowPlayingPluginInterface {
   openNotificationAccessSettings(): Promise<void>;
@@ -27,6 +36,8 @@ export interface NowPlayingPluginInterface {
     manufacturer: string;
   }>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
+  /** Menyerap scrobble yang ditangkap di latar oleh native (Opsi 2), lalu mengosongkan store. */
+  drainPendingScrobbles(): Promise<{ scrobbles: NativePendingScrobble[] }>;
   addListener(
     eventName: 'nowPlayingChanged' | 'playbackStateChanged',
     listener: (data: any) => void
@@ -34,6 +45,47 @@ export interface NowPlayingPluginInterface {
 }
 
 export const NowPlaying = registerPlugin<NowPlayingPluginInterface>('NowPlaying');
+
+/**
+ * Menyerap scrobble yang ditangkap NATIVE di latar (Opsi 2), memfilter preferensi "scrobble dari
+ * app lain", lalu memasukkannya ke antrean + kirim ke Last.fm. Dipanggil dari App saat app aktif
+ * (resume + interval). Aman dipanggil di web preview (plugin tak ada -> 0). Mengembalikan jumlah
+ * yang diproses.
+ */
+export async function drainAndFlushNative(): Promise<number> {
+  let drained: NativePendingScrobble[] = [];
+  try {
+    const res = await NowPlaying.drainPendingScrobbles();
+    drained = res?.scrobbles ?? [];
+  } catch {
+    return 0; // plugin native tak tersedia (web) atau gagal — abaikan
+  }
+  if (drained.length === 0) return 0;
+
+  const externalAllowed = await getExternalScrobbleEnabled().catch(() => true);
+  let done = 0;
+  for (const s of drained) {
+    const isInternal = s.sourcePackage === 'com.scrola.app';
+    if (!isInternal && !externalAllowed) continue; // hormati preferensi saat menyerap
+    try {
+      // enqueueScrobble sudah memanggil flushQueue di akhir (dengan guard anti-tumpang-tindih).
+      await enqueueScrobble(
+        {
+          artist: s.artist,
+          track: s.track,
+          album: s.album || undefined,
+          duration: s.durationSec,
+          timestamp: s.timestamp,
+        },
+        s.sourcePackage
+      );
+      done++;
+    } catch (e) {
+      console.warn('Gagal memproses scrobble latar:', e);
+    }
+  }
+  return done;
+}
 
 // Konstanta dari android.media.session.PlaybackState
 const STATE_PLAYING = 3;
@@ -179,54 +231,11 @@ export function useNowPlayingListener() {
       const playedNow = playedMsUntil(trackerRef.current, now);
       setCurrent((prev) => (prev && prev.playedMs !== playedNow ? { ...prev, playedMs: playedNow } : prev));
 
-      // Jadwalkan (atau jadwalkan ulang) pengecekan kelayakan. Setiap event menghitung ulang
-      // "berapa lama lagi sampai layak", lalu memasang satu timer. Timer lama dibatalkan supaya
-      // tidak menumpuk.
-      if (scrobbleTimerRef.current !== null) {
-        clearTimeout(scrobbleTimerRef.current);
-        scrobbleTimerRef.current = null;
-      }
-
-      if (scrobbledTrackKeyRef.current === trackKey) return; // sudah discrobble
-
-      const wait = msUntilEligible(trackerRef.current, now);
-      if (!Number.isFinite(wait)) return; // dijeda atau durasi tak valid: tak ada yang dijadwalkan
-
-      scrobbleTimerRef.current = setTimeout(() => {
-        scrobbleTimerRef.current = null;
-        diag(`timer BERBUNYI untuk ${trackKey}`);
-        // Verifikasi ULANG saat timer berbunyi: track harus masih sama, masih berjalan, dan
-        // benar-benar sudah memenuhi waktu (guard terhadap event yang mungkin datang di sela).
-        const tr = trackerRef.current;
-        if (tr.trackKey !== trackKey) { diag(`timer batal: track berganti`); return; }
-        if (msUntilEligible(tr, Date.now()) > 0) { diag(`timer batal: belum cukup waktu`); return; }
-        if (scrobbledTrackKeyRef.current === trackKey) { diag(`timer batal: sudah discrobble`); return; }
-
-        scrobbledTrackKeyRef.current = trackKey;
-        diag(`LAYAK -> memicu enqueue untuk ${trackKey}`);
-
-        const isInternal = data.packageName === 'com.scrola.app';
-        (isInternal ? Promise.resolve(true) : getExternalScrobbleEnabled())
-          .then((allowed) => {
-            if (!allowed) return; // dilewati sesuai preferensi; flag tetap set
-            return enqueueScrobble(
-              {
-                artist: meta.artist,
-                track: meta.title,
-                album: meta.album,
-                duration: meta.durationSec,
-                timestamp: meta.startedAt,
-              },
-              data.packageName
-            );
-          })
-          .catch((e) => {
-            if (scrobbledTrackKeyRef.current === trackKey) {
-              scrobbledTrackKeyRef.current = null;
-            }
-            console.warn('Gagal memasukkan scrobble ke antrean, akan dicoba lagi:', e);
-          });
-      }, wait);
+      // KELAYAKAN + ENQUEUE kini ditangani NATIVE (ScrolaNotificationListener → PendingScrobbleStore)
+      // agar scrobble tetap berjalan saat app di LATAR — WebView dibekukan sehingga timer JS mati
+      // (lihat Opsi 2). Tracker JS di atas DIPERTAHANKAN hanya untuk menggerakkan bar "Sedang
+      // Diamati"; ia tidak lagi men-scrobble. Hasil tangkapan native diserap lewat
+      // drainAndFlushNative() saat app aktif (dipanggil dari App).
     }).then((h) => (stateHandle = h)).catch((e) => {
       console.warn('NowPlaying.addListener(playbackStateChanged) gagal didaftarkan:', e);
     });

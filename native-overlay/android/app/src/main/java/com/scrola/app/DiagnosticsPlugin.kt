@@ -41,36 +41,20 @@ class DiagnosticsPlugin : Plugin() {
     @PluginMethod
     fun appendLog(call: PluginCall) {
         val line = call.getString("line") ?: return call.reject("line wajib diisi")
-        try {
-            val file = java.io.File(context.applicationContext.filesDir, "event_log.txt")
-            val ts = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
-                .format(java.util.Date())
-            val existing = if (file.exists()) file.readText().lines() else emptyList()
-            val kept = (existing + "[$ts] $line").takeLast(100)
-            file.writeText(kept.joinToString("\n"))
-            call.resolve()
-        } catch (e: Exception) {
-            call.reject("Gagal menulis log: ${e.message}")
-        }
+        NativeEventLog.append(context, line)
+        call.resolve()
     }
 
     @PluginMethod
     fun readEventLog(call: PluginCall) {
         val res = JSObject()
-        try {
-            val file = java.io.File(context.applicationContext.filesDir, "event_log.txt")
-            res.put("log", if (file.exists()) file.readText() else "")
-        } catch (e: Exception) {
-            res.put("log", "Gagal membaca log: ${e.message}")
-        }
+        res.put("log", NativeEventLog.read(context))
         call.resolve(res)
     }
 
     @PluginMethod
     fun clearEventLog(call: PluginCall) {
-        try {
-            java.io.File(context.applicationContext.filesDir, "event_log.txt").delete()
-        } catch (_: Exception) {}
+        NativeEventLog.clear(context)
         call.resolve()
     }
 }

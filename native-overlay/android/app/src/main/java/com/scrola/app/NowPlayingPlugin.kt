@@ -141,4 +141,31 @@ class NowPlayingPlugin : Plugin() {
         result.put("granted", granted)
         call.resolve(result)
     }
+
+    /**
+     * Menyerap semua scrobble yang ditangkap di LATAR oleh native (PendingScrobbleStore) lalu
+     * mengosongkan store. JS memanggil ini saat app aktif, memfilter preferensi, lalu mengirim
+     * ke Last.fm. Mengembalikan { scrobbles: [{artist, track, album, durationSec, timestamp,
+     * sourcePackage}, ...] }.
+     */
+    @PluginMethod
+    fun drainPendingScrobbles(call: PluginCall) {
+        val records = PendingScrobbleStore.drainAll(context)
+        val arr = org.json.JSONArray()
+        for (r in records) {
+            arr.put(
+                JSONObject().apply {
+                    put("artist", r.artist)
+                    put("track", r.track)
+                    put("album", r.album)
+                    put("durationSec", r.durationSec)
+                    put("timestamp", r.timestamp)
+                    put("sourcePackage", r.sourcePackage)
+                }
+            )
+        }
+        val result = JSObject()
+        result.put("scrobbles", arr)
+        call.resolve(result)
+    }
 }
