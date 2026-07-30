@@ -19,6 +19,9 @@ object ScrobbleTracker {
     const val UNKNOWN_DURATION_FALLBACK_SEC = 240
     const val NEVER = Long.MAX_VALUE
 
+    /** Posisi (ms) yang dianggap "kembali ke awal" untuk mendeteksi lagu diulang. */
+    const val REPEAT_START_MS = 3000L
+
     data class Tracker(
         val trackKey: String? = null,
         val playedMs: Long = 0L,
@@ -69,8 +72,22 @@ object ScrobbleTracker {
     }
 
     /**
-     * Terapkan sebuah event playback ke tracker. Track baru -> mulai tracker baru, seed dengan
-     * posisi saat ini (dibatasi). Track sama -> perbarui akumulasi sesuai transisi play/pause.
+     * Apakah event ini menandakan lagu DIULANG (loop/replay): posisi kembali ke awal PADAHAL track
+     * ini sudah sempat diputar cukup lama sampai LAYAK. Memakai waktu-berlalu (bukan jejak posisi)
+     * agar andal walau event jarang. Konservatif: rewind sebelum layak TIDAK dihitung ulang.
+     */
+    fun isRepeatEvent(t: Tracker, positionMs: Long, isPlaying: Boolean, now: Long): Boolean {
+        if (!isPlaying) return false
+        if (positionMs > REPEAT_START_MS) return false
+        val th = thresholdMs(t)
+        if (th <= 0L) return false
+        return playedMsUntil(t, now) >= th
+    }
+
+    /**
+     * Terapkan sebuah event playback ke tracker. Track baru ATAU lagu diulang (posisi kembali ke
+     * awal setelah sempat layak) -> mulai instance baru, seed dengan posisi (dibatasi). Track sama
+     * -> perbarui akumulasi sesuai transisi play/pause.
      */
     fun applyEvent(
         t: Tracker,
@@ -80,7 +97,7 @@ object ScrobbleTracker {
         positionMs: Long,
         now: Long
     ): Tracker {
-        if (trackKey != t.trackKey) {
+        if (trackKey != t.trackKey || isRepeatEvent(t, positionMs, isPlaying, now)) {
             return Tracker(
                 trackKey = trackKey,
                 playedMs = clampSeedMs(positionMs, durationSec),

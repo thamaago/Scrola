@@ -143,6 +143,11 @@ class ScrolaNotificationListener : NotificationListenerService() {
         activeCallbacks.forEach { (controller, cb) -> controller.unregisterCallback(cb) }
         activeCallbacks.clear()
         mediaSessionManager?.removeOnActiveSessionsChangedListener(sessionListener)
+        // Timer eligibility yang masih menunggu (postDelayed) tetap nangkring di main looper dan
+        // mereferensikan listener + state track lama sampai berbunyi — walau service sudah teardown.
+        // Batalkan di sini supaya tidak ada pekerjaan pasca-destroy & tidak menahan referensi.
+        eligibilityRunnable?.let { mainHandler.removeCallbacks(it) }
+        eligibilityRunnable = null
         ScrobbleForegroundService.stop(applicationContext)
     }
 
@@ -289,10 +294,14 @@ class ScrolaNotificationListener : NotificationListenerService() {
         val now = System.currentTimeMillis()
 
         val prevKey = tracker.trackKey
+        // Deteksi lagu diulang SEBELUM applyEvent (memakai tracker lama). Kalau track sama tapi
+        // diulang, guard scrobble harus dilepas supaya putaran baru bisa discrobble lagi.
+        val repeat = trackKey == prevKey &&
+            ScrobbleTracker.isRepeatEvent(tracker, positionMs, isPlaying, now)
         tracker = ScrobbleTracker.applyEvent(tracker, trackKey, isPlaying, curDurationSec, positionMs, now)
 
-        if (trackKey != prevKey) {
-            // Track baru: reset penanda + catat waktu mulai (timestamp scrobble, spek Last.fm).
+        if (trackKey != prevKey || repeat) {
+            // Track baru / diulang: reset penanda + catat waktu mulai (timestamp scrobble, spek Last.fm).
             scrobbledTrackKey = null
             trackStartedAtSec = now / 1000L
         }

@@ -3,6 +3,7 @@ import { App as CapApp } from '@capacitor/app';
 import { readHistory } from '../lib/scrobbleEngine';
 import { setLoved, deleteHistoryEntry, updateHistoryEntry, type HistoryRow } from '../lib/db/queries';
 import { loveTrack, unloveTrack } from '../lib/lastfm';
+import { recordCorrection } from '../lib/correctionsStore';
 import { loadSession } from '../lib/secureStore';
 
 export type HistoryEntry = HistoryRow;
@@ -93,6 +94,12 @@ export function useScrobbleHistory() {
       setItems((prev) => prev.map((it) => (it.id === entry.id ? { ...it, ...fields } : it)));
       try {
         await updateHistoryEntry(entry.id, fields);
+        // "Belajar dari koreksi": ingat perubahan ini sebagai aturan, terapkan otomatis ke scrobble
+        // serupa berikutnya. No-op kalau perubahan trivial (dicek di dalam recordCorrection).
+        void recordCorrection(
+          { artist: entry.artist, track: entry.track },
+          { artist: fields.artist, track: fields.track }
+        );
         return true;
       } catch (e) {
         console.warn('Gagal mengedit entri riwayat, dikembalikan:', e);

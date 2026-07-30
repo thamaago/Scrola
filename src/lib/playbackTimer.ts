@@ -91,16 +91,41 @@ function clampSeedMs(positionMs: number | undefined, durationSec: number): numbe
   return Math.min(positionMs, maxMs);
 }
 
+/** Posisi (ms) yang dianggap "kembali ke awal" untuk mendeteksi lagu diulang. */
+export const REPEAT_START_MS = 3000;
+
+/**
+ * Apakah event ini menandakan lagu DIULANG (loop/replay): posisi melompat kembali ke awal PADAHAL
+ * track ini sudah sempat diputar cukup lama sampai LAYAK discrobble. Memakai waktu-berlalu (bukan
+ * jejak posisi terakhir) supaya andal walau event posisi jarang. Hanya berlaku saat playing.
+ *
+ * Konservatif: hanya dianggap putaran baru kalau putaran SEBELUMNYA sudah melewati ambang — jadi
+ * me-rewind lagu sebelum layak TIDAK menghasilkan scrobble ganda.
+ */
+export function isRepeatEvent(
+  t: PlaybackTracker,
+  positionMs: number | undefined,
+  isPlaying: boolean,
+  now: number
+): boolean {
+  if (!isPlaying) return false;
+  const pos = positionMs ?? 0;
+  if (pos > REPEAT_START_MS) return false;
+  const th = thresholdMs(t);
+  if (th <= 0) return false;
+  return playedMsUntil(t, now) >= th;
+}
+
 export function applyEvent(
   t: PlaybackTracker,
   ev: { trackKey: string; isPlaying: boolean; durationSec: number; positionMs?: number },
   now: number
 ): PlaybackTracker {
-  // Track berganti -> mulai tracker baru. SEED dengan posisi saat ini kalau lagu terdeteksi di
-  // TENGAH pemutaran: tanpa seed, lagu yang baru terdeteksi (mis. karena deteksi pemutar agak
-  // lambat) dihitung dari 0 sehingga scrobble-nya tertunda — atau terlewat sama sekali kalau lagu
-  // keburu habis sebelum ambang tercapai. Seed dibatasi clampSeedMs agar konservatif.
-  if (ev.trackKey !== t.trackKey) {
+  // Track berganti, ATAU lagu yang sama DIULANG (posisi kembali ke awal setelah sempat layak) ->
+  // mulai instance BARU. SEED dengan posisi saat ini kalau lagu terdeteksi di TENGAH pemutaran:
+  // tanpa seed, lagu yang baru terdeteksi (mis. karena deteksi pemutar agak lambat) dihitung dari 0
+  // sehingga scrobble-nya tertunda — atau terlewat kalau lagu keburu habis. Seed dibatasi clampSeedMs.
+  if (ev.trackKey !== t.trackKey || isRepeatEvent(t, ev.positionMs, ev.isPlaying, now)) {
     return {
       trackKey: ev.trackKey,
       playedMs: clampSeedMs(ev.positionMs, ev.durationSec),

@@ -9,6 +9,9 @@ import {
   type PlaybackTracker,
 } from '../lib/playbackTimer';
 import { getExternalScrobbleEnabled } from '../lib/preferences';
+import { cleanTrackMetadata } from '../lib/cleanTrackMetadata';
+import { applyCorrection } from '../lib/corrections';
+import { loadCorrections } from '../lib/correctionsStore';
 
 /** Satu scrobble yang ditangkap di latar oleh native, menunggu dikirim ke Last.fm. */
 export interface NativePendingScrobble {
@@ -63,16 +66,25 @@ export async function drainAndFlushNative(): Promise<number> {
   if (drained.length === 0) return 0;
 
   const externalAllowed = await getExternalScrobbleEnabled().catch(() => true);
+  const rules = await loadCorrections();
   let done = 0;
   for (const s of drained) {
     const isInternal = s.sourcePackage === 'com.scrola.app';
     if (!isInternal && !externalAllowed) continue; // hormati preferensi saat menyerap
     try {
+      // 1) Rapikan metadata (judul video YouTube -> artis/track wajar). Konservatif: Spotify dsb.
+      //    tak disentuh. 2) Terapkan KOREKSI yang pernah kamu ajarkan lewat edit Riwayat.
+      const cleaned = cleanTrackMetadata({
+        artist: s.artist,
+        track: s.track,
+        sourcePackage: s.sourcePackage,
+      });
+      const finalMeta = applyCorrection(cleaned, rules);
       // enqueueScrobble sudah memanggil flushQueue di akhir (dengan guard anti-tumpang-tindih).
       await enqueueScrobble(
         {
-          artist: s.artist,
-          track: s.track,
+          artist: finalMeta.artist,
+          track: finalMeta.track,
           album: s.album || undefined,
           duration: s.durationSec,
           timestamp: s.timestamp,

@@ -6,6 +6,7 @@ import {
   thresholdMs,
   thresholdMsForDuration,
   msUntilEligible,
+  isRepeatEvent,
   observedProgress,
   UNKNOWN_DURATION_FALLBACK_SEC,
 } from '../playbackTimer';
@@ -103,6 +104,54 @@ describe('observedProgress — bar "Sedang Diamati" dari waktu berlalu', () => {
     const p = observedProgress(200, 99_500); // 0.5s tersisa
     expect(p.remainingSec).toBe(1);
     expect(p.eligible).toBe(false);
+  });
+});
+
+describe('deteksi lagu diulang (repeat)', () => {
+  it('bukan repeat kalau tidak sedang playing', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200 }, 0);
+    // sudah layak (>=100s) tapi paused
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: false, durationSec: 200 }, 120_000);
+    expect(isRepeatEvent(t, 0, false, 130_000)).toBe(false);
+  });
+
+  it('bukan repeat kalau posisi belum kembali ke awal', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200 }, 0);
+    expect(isRepeatEvent(t, 50_000, true, 120_000)).toBe(false); // posisi 50s, bukan ~0
+  });
+
+  it('bukan repeat kalau putaran sebelumnya BELUM layak (rewind dini)', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200 }, 0); // ambang 100s
+    // baru diputar 40s lalu di-rewind ke 0 -> belum layak -> jangan hitung ulang
+    expect(isRepeatEvent(t, 0, true, 40_000)).toBe(false);
+  });
+
+  it('repeat kalau posisi ~0 dan putaran sebelumnya SUDAH layak', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200 }, 0); // ambang 100s
+    expect(isRepeatEvent(t, 0, true, 205_000)).toBe(true); // sudah 205s (>100s), posisi balik ke 0
+  });
+
+  it('applyEvent me-reset tracker saat repeat terdeteksi (scrobble ulang mungkin)', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 0 }, 0);
+    // main lewat ambang lalu lagu berputar ulang (posisi ~0, now=205s)
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 1_000 }, 205_000);
+    // instance baru: played ~1s, dan msUntilEligible kembali mendekati ambang penuh
+    expect(playedMsUntil(t, 205_000)).toBe(1_000);
+    expect(msUntilEligible(t, 205_000)).toBe(99_000); // 100000 - 1000
+  });
+
+  it('rewind sebelum layak TIDAK me-reset (tetap satu putaran)', () => {
+    let t = createTracker();
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 0 }, 0);
+    // rewind ke 0 di detik 40 (belum layak) -> harus lanjut akumulasi, bukan reset
+    const before = playedMsUntil(t, 40_000);
+    t = applyEvent(t, { trackKey: 'A::b', isPlaying: true, durationSec: 200, positionMs: 0 }, 40_000);
+    expect(playedMsUntil(t, 40_000)).toBeGreaterThanOrEqual(before); // tidak turun ke ~0
   });
 });
 

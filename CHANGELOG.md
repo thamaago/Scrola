@@ -17,6 +17,91 @@ tooling).
 
 ## [Unreleased]
 
+### Internal — audit RAM/memory (lanjutan sesi sebelumnya)
+- Audit jejak memori/lifecycle native. Kondisi awal ternyata sudah rapi: `PlaybackService.onDestroy`
+  memanggil `cancelIdleStop()` + `player.release()` + `mediaSession.release()`; `PlayerPlugin`
+  menghentikan position-poll di `handleOnDestroy()`; `ScrolaNotificationListener.cleanupAllCallbacks()`
+  melepas semua callback controller + `OnActiveSessionsChangedListener`.
+- **Fixed (leak kecil, nyata):** `cleanupAllCallbacks()` tidak membatalkan `eligibilityRunnable` yang
+  pending. Saat izin notifikasi dicabut / listener di-destroy dengan timer eligibility masih menunggu
+  (`postDelayed`, s.d. `wait` ms), Runnable itu tetap antre di main looper — menahan referensi ke
+  listener mati + state track lama, lalu tetap eksekusi pasca-teardown. Kini dibatalkan di cleanup,
+  simetris dengan cancel-sebelum-reschedule yang sudah ada.
+- **Catatan (tidak diubah, sengaja):** (1) position-poll `PlayerPlugin` repost tiap 1 dtk sepanjang
+  WebView hidup walau idle/pause — bukan leak (berhenti di `handleOnDestroy`), optimasi opsional
+  ditunda demi hindari regresi. (2) `NativeEventLog` read-modify-write nulis ulang seluruh file tiap
+  event tapi dibatasi ≤100 baris (beberapa KB) — aman.
+- Validasi: brace/paren balance semua `.kt` seimbang; perubahan murni lifecycle Android (tak ada
+  logika murni untuk disimulasikan Vitest), jadi divalidasi lewat pembacaan kode + simetri. **Bukti
+  akhir tetap: build CI + perilaku device.**
+
+### Fixed — lagu yang DIULANG kini tercatat ulang (deteksi repeat)
+- **Bug:** `applyEvent` tak reset saat `trackKey` sama, jadi memutar lagu yang sama berkali-kali
+  hanya menghasilkan 1 scrobble (Last.fm seharusnya 1 per putaran penuh).
+- **Perbaikan:** `isRepeatEvent` — kalau posisi kembali ke awal (≤ `REPEAT_START_MS`) PADAHAL putaran
+  ini sudah diputar cukup lama sampai LAYAK (pakai waktu-berlalu, bukan jejak posisi), itu putaran
+  baru → tracker di-reset + guard scrobble native dilepas (scrobble ulang). **Konservatif:** rewind
+  sebelum layak TIDAK menghasilkan scrobble ganda.
+- Diterapkan identik di `playbackTimer.ts` (bar) dan `ScrobbleTracker.kt` (jalur scrobble native);
+  listener melepas `scrobbledTrackKey` saat repeat. **6 test TS + 7 test Kotlin** (dikompilasi +
+  dijalankan kotlinc), 22 test tracker lama tetap lolos (parity).
+
+### Added — "Belajar dari koreksi" (versi ramah dari regex edits Pano)
+- Saat kamu memperbaiki entri Riwayat yang salah label, Scrola **mengingat** koreksinya sebagai
+  aturan dan menerapkannya OTOMATIS ke scrobble serupa berikutnya — tanpa perlu menulis regex.
+- `corrections.ts` (murni): pencocokan (artist, track) dinormalisasi (case-insensitive, spasi
+  dikolaps) — KONSERVATIF, cocok persis agar tak salah mengoreksi lagu lain. `upsertRule` (replace
+  by-key, batasi 500 aturan terbaru), `applyCorrection`, `shouldRecordCorrection`. `correctionsStore.ts`
+  menyimpan lewat SecureStore + cache memori. **12 test.**
+- Wiring: `useScrobbleHistory.updateEntry` merekam koreksi setelah edit; `drainAndFlushNative`
+  menerapkannya SETELAH `cleanTrackMetadata` (satu titik yang dilewati semua scrobble). Total 158
+  test TS lolos.
+- **Batas:** aturan bekerja pada nilai setelah pembersih (sama seperti yang tampil di Riwayat).
+  Belum divalidasi di device; belum ada UI untuk melihat/menghapus aturan (bisa jadi tahap lanjutan).
+
+
+### Changed — pembersih metadata diperluas berdasarkan kapabilitas Pano Scrobbler
+- Setelah meriset Pano Scrobbler (regex edits, "extract mode", parsing judul YouTube, "fix
+  Remastered"), `cleanTrackMetadata.ts` diperluas dengan yang berdampak-tinggi & aman:
+  - **Noise VERSI (semua sumber, termasuk Spotify):** buang tag "Remastered" ala katalog dari track
+    — `- Remastered`, `- Remastered 2011`, `- 2011 (Digital) Remaster`, `(Remastered 2011)`, dll.
+    Ini yang sering ditambahkan Spotify. Tanda hubung yang BUKAN noise versi tetap tidak disentuh.
+  - **Blok noise YouTube diperluas:** buang `[NCS Release]`/`(… Release)`, `(prod. by …)`,
+    `(Free Download)`/`(Out Now)`/`(Download Link)`, dan tag promosi tambahan (Visualizer, 4K/8K,
+    Full HD, COLORS show, clip officiel, videoclip, dst.) — sambil tetap mempertahankan tag bermakna
+    (Remix/Acoustic/Live/Mashup/feat/Cover).
+  - Normalisasi tanda kutip pintar (“ ” ‘ ’) dan spasi dalam kurung.
+- **Tetap konservatif:** heuristik agresif hanya untuk paket YouTube; sumber katalog hanya kena
+  pembersih noise versi. Kalau ragu, biarkan apa adanya.
+- **16 test** (`cleanTrackMetadata.test.ts`, +5) termasuk 4 bentuk Remastered, blok Release/prod/
+  download, noise versi pada judul YouTube, dan tag YouTube yang diperluas. Total 140 test lolos.
+- **Belum divalidasi di device.** Heuristik tak pernah 100% sempurna; bisa dijadikan toggle atau
+  diperluas lagi bila kamu menemukan pola judul lain.
+
+
+### Added — pembersih metadata scrobble (judul video YouTube -> artis/track wajar)
+- **Dari log perangkat:** YouTube Music mengirim JUDUL VIDEO sebagai track dan NAMA CHANNEL sebagai
+  artis untuk konten non-katalog — mis. artis "Lo-fi Kirana" · track "Dimas Angkasa (Feat Kirana
+  Seo) - Garis Batas (Mashup) | Official Audio", dan artis "Bluey - Official Channel" · track "Bluey
+  Extended Theme Song 💙🎶 | Bluey". Keduanya terkirim mentah ke Last.fm.
+- **`cleanTrackMetadata.ts`** (murni, dipasang di `drainAndFlushNative` sebelum enqueue — satu titik
+  yang dilewati semua scrobble):
+  - **Konservatif lintas sumber:** sumber katalog (Spotify dsb.) TIDAK disentuh selain trim/emoji —
+    judul yang memang mengandung " - " tidak dipisah. Heuristik agresif hanya untuk paket YouTube.
+  - YouTube: buang emoji, potong bagian setelah " | " (channel/tag/album noise), buang tag promosi
+    berkurung dari daftar TERBATAS (Official Audio/Video, Lyrics, HD, dst.) — sambil MEMPERTAHANKAN
+    tag bermakna (Remix/Acoustic/Live/Mashup/feat).
+  - Channel "… - Topic" (auto-generate, biasanya bersih): buang "- Topic", judul dipakai apa adanya
+    (tidak dipisah). Channel biasa: coba pisah "Artis - Judul" di " - " pertama; kalau gagal, buang
+    suffix channel (VEVO/Official Channel) dari artis dan pakai judul bersih sebagai track.
+- **11 test** (`cleanTrackMetadata.test.ts`) termasuk dua kasus nyata dari log, jaminan Spotify tak
+  tersentuh, "- Topic", pelestarian tag bermakna, pisah pada dash pertama, dan sikap konservatif saat
+  hasil pisah kosong. Total 135 test lolos.
+- **Batas jujur:** ini heuristik — tak akan 100% sempurna untuk semua judul aneh. Sengaja memihak
+  "biarkan apa adanya" saat ragu agar tak merusak metadata yang sudah benar. Belum divalidasi di
+  device; bisa dijadikan toggle bila kamu ingin.
+
+
 ### Added — Scrobble di LATAR belakang (Opsi 2, Tahap 2–3: kelayakan native + serap JS)
 - **Menyelesaikan pemindahan pipeline kelayakan ke native** supaya scrobble tetap berjalan saat app
   ditutup/di-latar-kan (WebView dibekukan → timer JS mati; itu sebabnya dulu hanya lagu yang diputar
