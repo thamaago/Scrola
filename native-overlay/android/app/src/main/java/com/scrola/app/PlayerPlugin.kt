@@ -27,6 +27,14 @@ class PlayerPlugin : Plugin() {
         private val mainHandler = Handler(Looper.getMainLooper())
         private var positionPollRunnable: Runnable? = null
 
+        // Interval poll adaptif. Saat playing tetap 1 dtk (perilaku lama, dipakai progress bar &
+        // eligibility). Saat pause/tak ada internal player, backoff supaya tak membangunkan CPU
+        // tiap detik sia-sia — mayoritas sesi hanya scrobble Spotify eksternal, PlaybackService
+        // sering null sepanjang app hidup.
+        private const val POLL_ACTIVE_MS = 1000L
+        private const val POLL_PAUSED_MS = 2000L
+        private const val POLL_IDLE_MS = 3000L
+
         fun emit(eventName: String, data: JSONObject?) {
             instance?.notifyListeners(eventName, data?.let { JSObject.fromJSONObject(it) } ?: JSObject())
         }
@@ -39,24 +47,33 @@ class PlayerPlugin : Plugin() {
     }
 
     /**
-     * Poll posisi playback tiap 1 detik untuk dikirim ke JS (dipakai progress bar & eligibility
-     * check). Dihentikan di handleOnDestroy() — sebelumnya loop ini tidak pernah berhenti sama
-     * sekali selama proses app hidup, terus memakai CPU/baterai walau plugin/WebView sudah
-     * tidak dipakai lagi.
+     * Poll posisi playback untuk dikirim ke JS (dipakai progress bar & eligibility check).
+     * Interval adaptif (lihat konstanta POLL_*): 1 dtk saat benar-benar playing, lebih lambat saat
+     * pause, paling lambat saat tak ada internal player sama sekali. Loop TIDAK pernah berhenti
+     * total selama plugin hidup — hanya melambat — supaya begitu playback lanjut, seek-bar pasti
+     * pulih tanpa perlu pemicu eksternal (menghindari risiko seek-bar freeze setelah resume).
+     * Dihentikan sepenuhnya hanya di handleOnDestroy().
      */
+    private fun nextPollDelayMs(playing: Boolean, hasService: Boolean): Long = when {
+        playing -> POLL_ACTIVE_MS
+        hasService -> POLL_PAUSED_MS
+        else -> POLL_IDLE_MS
+    }
+
     private fun startPositionPolling() {
         positionPollRunnable = object : Runnable {
             override fun run() {
                 val service = PlaybackService.instance
+                val playing = service?.isPlaying() == true
                 if (service != null) {
                     val payload = JSONObject().apply {
                         put("positionMs", service.currentPositionMs())
                         put("durationMs", service.durationMs())
-                        put("isPlaying", service.isPlaying())
+                        put("isPlaying", playing)
                     }
                     emit("playerPositionChanged", payload)
                 }
-                mainHandler.postDelayed(this, 1000)
+                mainHandler.postDelayed(this, nextPollDelayMs(playing, service != null))
             }
         }
         mainHandler.post(positionPollRunnable!!)

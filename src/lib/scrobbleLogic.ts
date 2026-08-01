@@ -9,32 +9,43 @@
 export interface ScrobbleResponseParseResult {
   accepted: number;
   ignoredIndexes: Set<number>;
+  // Subset dari ignoredIndexes yang penolakannya TRANSIEN (kode 5 = batas scrobble harian) —
+  // boleh dicoba ulang nanti, jangan dibuang. Kode 1-4 permanen dan TIDAK masuk sini.
+  retryableIndexes: Set<number>;
 }
+
+// Kode ignoredMessage yang bersifat sementara & layak retry. Per dok resmi Last.fm hanya kode 5
+// (Daily scrobble limit exceeded); kode 1-4 (artist/track diabaikan, timestamp terlalu tua/baru)
+// permanen.
+const RETRYABLE_IGNORE_CODES = new Set(['5']);
 
 /**
  * Parse respons track.scrobble dari Last.fm. Saat mengirim >1 track, field `scrobble` berupa
  * array; saat hanya 1 track, Last.fm API mengembalikannya sebagai objek tunggal (bukan array
  * berisi 1 elemen) — kuirk yang cukup terkenal di API ini, jadi wajib dinormalisasi.
  *
- * `ignoredMessage.code` != "0" berarti track ditolak Last.fm (mis. artist kosong, timestamp
- * terlalu lama) — track begitu tidak perlu dicoba ulang.
+ * `ignoredMessage.code` != "0" berarti track ditolak Last.fm. Sebagian besar penolakan permanen
+ * (artist/track diabaikan, timestamp di luar jendela) — buang. Tapi kode 5 (batas harian) hanya
+ * sementara: kembalikan lewat `retryableIndexes` supaya pemanggil bisa menahannya di antrean.
  */
 export function parseScrobbleResponse(response: any, expectedCount: number): ScrobbleResponseParseResult {
   const raw = response?.scrobbles?.scrobble;
   const list: any[] = Array.isArray(raw) ? raw : raw ? [raw] : [];
   const ignoredIndexes = new Set<number>();
+  const retryableIndexes = new Set<number>();
 
   if (list.length === expectedCount) {
     list.forEach((item, i) => {
       const code = item?.ignoredMessage?.code;
       if (code !== undefined && code !== '0' && code !== 0) {
         ignoredIndexes.add(i);
+        if (RETRYABLE_IGNORE_CODES.has(String(code))) retryableIndexes.add(i);
       }
     });
   }
   // Kalau jumlah item respons tidak cocok (format tak terduga), jangan tebak-tebak —
   // anggap semua diterima daripada salah membuang data yang sebetulnya sukses.
-  return { accepted: expectedCount - ignoredIndexes.size, ignoredIndexes };
+  return { accepted: expectedCount - ignoredIndexes.size, ignoredIndexes, retryableIndexes };
 }
 
 /**

@@ -127,8 +127,11 @@ async function flushQueueOnce(sourcePackage?: string) {
       );
       diag(`scrobbleBatch BALASAN diterima`);
 
-      const { ignoredIndexes } = parseScrobbleResponse(response, batch.length);
-      diag(`Last.fm terima ${batch.length - ignoredIndexes.size}/${batch.length}, ditolak ${ignoredIndexes.size}`);
+      const { ignoredIndexes, retryableIndexes } = parseScrobbleResponse(response, batch.length);
+      diag(
+        `Last.fm terima ${batch.length - ignoredIndexes.size}/${batch.length}, ditolak ${ignoredIndexes.size}` +
+          (retryableIndexes.size > 0 ? ` (coba-ulang ${retryableIndexes.size}: batas harian)` : '')
+      );
 
       // PENTING soal urutan & duplikasi: kita HAPUS dari antrean DULU, baru tulis ke history.
       // Kalau removeFromQueue berhasil tapi addHistoryBatch gagal, akibatnya "kehilangan" entri
@@ -138,7 +141,11 @@ async function flushQueueOnce(sourcePackage?: string) {
       // di-scrobble ULANG ke Last.fm pada flush berikutnya — duplikat yang terlihat user di
       // profil Last.fm mereka. Dari dua kegagalan parsial, kehilangan baris history lokal jauh
       // lebih ringan daripada mengotori data publik user, jadi urutan ini yang dipilih.
-      await removeFromQueue(batch.map((row) => row.id));
+      //
+      // Hapus HANYA yang diterima + yang ditolak PERMANEN (kode 1-4). Yang transien (kode 5 =
+      // batas scrobble harian) JANGAN dihapus — tahan di antrean untuk dicoba ulang nanti.
+      const toRemove = batch.filter((_, i) => !retryableIndexes.has(i));
+      await removeFromQueue(toRemove.map((row) => row.id));
 
       const acceptedRows = batch.filter((_, i) => !ignoredIndexes.has(i));
       if (acceptedRows.length > 0) {
@@ -170,11 +177,25 @@ async function flushQueueOnce(sourcePackage?: string) {
           diag(`addHistoryBatch GAGAL: ${(e as Error).message} — INI kenapa Riwayat kosong!`);
         }
       }
-      if (ignoredIndexes.size > 0) {
+      const permanentIgnored = Array.from(ignoredIndexes).filter((i) => !retryableIndexes.has(i));
+      if (permanentIgnored.length > 0) {
         console.warn(
-          `Last.fm mengabaikan ${ignoredIndexes.size} track (kemungkinan ditolak permanen, tidak dicoba ulang):`,
-          Array.from(ignoredIndexes).map((i) => `${batch[i].artist} - ${batch[i].track}`)
+          `Last.fm mengabaikan ${permanentIgnored.length} track (ditolak permanen, tidak dicoba ulang):`,
+          permanentIgnored.map((i) => `${batch[i].artist} - ${batch[i].track}`)
         );
+      }
+      if (retryableIndexes.size > 0) {
+        // Batas scrobble harian Last.fm — sementara. Tandai gagal (attempts++, jadi tetap terbatas
+        // oleh MAX_ATTEMPTS kalau limit bertahan lama) dan HENTIKAN flush ini: batch berikutnya
+        // pasti kena limit yang sama, jadi tak ada gunanya lanjut menguras & menghantam Last.fm.
+        // Sisa antrean (termasuk baris ini) dicoba lagi pada flush berikutnya.
+        const retryRows = batch.filter((_, i) => retryableIndexes.has(i));
+        await markQueueAttemptFailed(
+          retryRows.map((row) => row.id),
+          'Ditunda: batas scrobble harian Last.fm (kode 5)'
+        );
+        diag(`Ditahan untuk coba-ulang: ${retryRows.length} track (batas harian Last.fm) — flush dihentikan`);
+        return;
       }
       // Lanjut ke iterasi berikutnya untuk memproses sisa antrean (kalau ada).
     } catch (e) {

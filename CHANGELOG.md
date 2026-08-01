@@ -17,6 +17,77 @@ tooling).
 
 ## [Unreleased]
 
+### Docs — positioning pasar Indonesia diformalkan
+- `docs/POSITIONING.md` baru: mengonsolidasikan positioning yang selama ini tersebar (README,
+  `DESIGN.md` §kompetitif, `RELEASES.md` §"Kenapa Scrola?") jadi satu pernyataan posisi pasar
+  Indonesia yang eksplisit — untuk siapa, wedge lokal (Bahasa Indonesia lebih dulu, identitas
+  naratif/cetak yang mudah dibagikan, ringan/tanpa telemetri), perbandingan jujur vs Pano Scrobbler
+  (termasuk overlap listener yang harus diakui), dan pemetaan ke materi publik.
+- **Sengaja tanpa angka pasar karangan** (etos kejujuran): ada bagian "Data yang perlu divalidasi"
+  yang mencatat data empiris apa yang harus dikumpulkan maintainer sebelum klaim dipertajam.
+- Ditautkan dari daftar dokumen README. Menutup item roadmap "positioning pasar Indonesia (belum
+  diformalkan)". Perubahan dokumen saja — tak menyentuh kode; suite tetap 183 test.
+
+### Fixed — serial zine kini stabil per minggu & selaras dgn sistem serial tiket
+- Serial zine sebelumnya (dibuat di giliran yang sama) memakai suffix `totalTracks % 10000`: (a)
+  BERUBAH kalau zine minggu yang sama dibagikan ulang setelah scrobble bertambah — padahal serial
+  "koleksi" harus tetap; (b) rawan tabrakan; (c) tidak memakai konvensi hash serial yang sudah ada.
+- `zineSerial(weekStartUnixSec)` dipindah dari inline (tak teruji) ke `sisiBZineLayout.ts` (murni,
+  teruji), kini HANYA bergantung minggu, dan suffix-nya memakai `subjectHash` (djb2) yang sama dengan
+  `ticketSerialLogic.ts` → bahasa serial konsisten di seluruh app. Format tetap `SB-YYYY-Wnn-XXXX`
+  (tampilan yang sudah disetujui), tapi XXXX kini hash stabil, bukan angka yang bisa berubah.
+- TDD RED→GREEN, **3 test baru** (format, determinisme/stabilitas, minggu berbeda→serial berbeda).
+  Total **183 test lolos**. Catatan: sebelum ekspor zine pernah dipakai luas, tak ada serial lama
+  yang perlu dimigrasikan — aman.
+
+### Added (v0.3.0) — ekspor zine Sisi B
+- Item roadmap "Sisi B sebagai zine/share yang bisa diekspor" — SELESAI (di balik proof device).
+  Cek existing dulu: `SisiBScreen`/`BabAlbumScreen`/`TiketKoleksiScreen` + logikanya sudah ada; yang
+  kurang HANYA ekspor gambar (baris ~248 `SisiBScreen` sebelumnya placeholder jujur "belum tersedia").
+- `sisiBZineLayout.ts` — modul MURNI: `weekRangeLabel` (rentang minggu Indonesia, ringkas lintas
+  bulan/tahun), `dayBarHeights` (normalisasi 7 hari, aman nol), `peakHourLabel`, `DAY_LABELS_ID`.
+  TDD RED→GREEN, **11 test baru** (total **180 lolos**).
+- `sisiBZineImage.ts` — `renderSisiBZine(stats, weekStartUnixSec)` menggambar zine 1080×1920 via
+  Canvas (mengikuti pola `shareImage.ts`: nol dependensi, tunggu `document.fonts.ready`, base64 PNG),
+  tema Hutan Malam: perforasi, masthead rentang minggu, lagu teratas, bar chart mingguan (hari puncak
+  disorot), grid statistik, strip jam puncak, serial koleksi dekoratif, tagline.
+- `SisiBScreen` — placeholder diganti tombol "Bagikan sebagai zine" sungguhan → `renderSisiBZine`
+  → `SharePlugin.shareImage` (pipeline sama dengan share tiket Now Playing), lengkap dgn state
+  loading & pesan error.
+- `scripts/mockup_sisib_zine.py` — mockup PIL sebagai proxy visual (disetujui) sebelum Canvas dibangun.
+- Validasi: `tsc` bersih (2 error `Intl.Segmenter` pra-ada), 180 test lolos, brace `.ts/.tsx` seimbang.
+  Renderer Canvas tak bisa dijalankan di lingkungan ini → **belum tervalidasi device**; bukti akhir
+  tetap CI + tampilan share di SM-X706B.
+
+### Fixed — scrobble yang ditolak karena batas harian tak lagi dibuang (kode 5)
+- `parseScrobbleResponse` dulu memperlakukan **semua** `ignoredMessage.code` non-nol sebagai
+  "ditolak permanen → buang". Padahal per dok resmi Last.fm hanya kode 1-4 (artist/track diabaikan,
+  timestamp terlalu tua/baru) yang permanen; **kode 5 = batas scrobble harian** bersifat sementara.
+  Membuangnya = kehilangan scrobble sah, bertentangan dengan etos app.
+- Kini parse mengembalikan `retryableIndexes` (subset ignored berkode 5). Di `flushQueueOnce`:
+  diterima + ditolak-permanen dihapus dari antrean seperti biasa; yang **transien ditahan di
+  antrean** (`markQueueAttemptFailed`, jadi tetap terbatas `MAX_ATTEMPTS` bila limit bertahan lama),
+  lalu flush **dihentikan** siklus itu (batch berikutnya pasti kena limit sama — hindari menghantam
+  Last.fm dalam loop). Sisa antrean dicoba lagi pada flush berikutnya.
+- Kode `ignoredMessage` diverifikasi langsung dari dok resmi Last.fm (track.scrobble), bukan ingatan.
+- **Pure-logic + TDD:** RED→GREEN, **5 test baru** untuk klasifikasi transien/permanen (kode string
+  & number, campuran, semua-5, semua-sukses). Total **169 test lolos**. `tsc` bersih (2 error
+  `Intl.Segmenter` pra-ada). Belum tervalidasi device (kasus ini langka — perlu backlog masif
+  menembus batas harian); bukti akhir tetap CI + device.
+
+### Changed — position-poll adaptif (tindak lanjut Temuan 2 audit RAM)
+- `PlayerPlugin` dulu repost poll posisi **tiap 1 dtk tanpa syarat** sepanjang WebView hidup —
+  termasuk saat `PlaybackService.instance == null` (internal player tak pernah dipakai, kasus umum
+  karena mayoritas sesi hanya scrobble Spotify eksternal). Bangun CPU tiap detik tanpa emit apa pun.
+- Kini interval adaptif: **1 dtk saat playing** (perilaku lama persis — progress bar & eligibility
+  tak berubah), 2 dtk saat pause, 3 dtk saat tak ada internal player (+lewati emit). Keputusan
+  interval dipisah ke `nextPollDelayMs(playing, hasService)` agar niatnya eksplisit.
+- Loop **tidak** pernah berhenti total selama plugin hidup (hanya melambat), jadi begitu playback
+  lanjut, seek-bar pasti pulih tanpa pemicu eksternal — sengaja dipilih untuk menghindari risiko
+  seek-bar freeze setelah resume. Penghentian penuh tetap hanya di `handleOnDestroy()`.
+- Murni Kotlin lifecycle (tak ada harness JVM di lingkungan ini) → divalidasi lewat pembacaan kode +
+  brace-balance semua `.kt` seimbang + 164 test TS tetap hijau. **Bukti akhir: CI + device.**
+
 ### Changed — drain backlog kini per-batch (≤50), bukan 1 API call/track
 - **Sebelumnya:** `drainAndFlushNative` memanggil `enqueueScrobble` per track, dan tiap enqueue
   langsung flush → tiap track jadi satu panggilan `track.scrobble` sendiri (terlihat di log device
@@ -30,8 +101,10 @@ tooling).
 - **Pure-logic + TDD:** partisi baris beracun/layak diekstrak jadi `partitionByAttempts` di
   `scrobbleLogic.ts` (dulu inline di `flushQueueOnce`) + konstanta `MAX_SCROBBLE_BATCH`. RED→GREEN,
   **6 test baru**, total **164 test lolos**. `tsc` bersih (2 error `Intl.Segmenter` pra-ada tak terkait).
-- **Belum tervalidasi device** untuk build ini: bukti akhir tetap CI + perilaku SM-X706B. Yang diharap
-  di log berikutnya saat backlog besar: satu baris `scrobbleBatch KIRIM: N track` (N>1), bukan N baris `1 track`.
+- **Tervalidasi device (SM-X706B):** log 22:40:58 — 6 scrobble latar (ditangkap 22:13–22:39) di-drain
+  sebagai **6 `enqueue MASUK` tanpa flush di antaranya → satu `flush` → `scrobbleBatch KIRIM: 6 track`**
+  (bukan 6× `1 track`), `Last.fm terima 6/6 ditolak 0`, `addHistoryBatch OK: 6 baris` (tanpa duplikat).
+  Prediksi "satu baris N>1" terpenuhi.
 
 ### Fixed — Log Peristiwa tak lagi dipenuhi flush kosong
 - Timer sinkronisasi 20 dtk (`App.tsx`) memanggil `flushQueue` terus-menerus. `flushQueueOnce` menulis
@@ -53,10 +126,10 @@ tooling).
   (`postDelayed`, s.d. `wait` ms), Runnable itu tetap antre di main looper — menahan referensi ke
   listener mati + state track lama, lalu tetap eksekusi pasca-teardown. Kini dibatalkan di cleanup,
   simetris dengan cancel-sebelum-reschedule yang sudah ada.
-- **Catatan (tidak diubah, sengaja):** (1) position-poll `PlayerPlugin` repost tiap 1 dtk sepanjang
-  WebView hidup walau idle/pause — bukan leak (berhenti di `handleOnDestroy`), optimasi opsional
-  ditunda demi hindari regresi. (2) `NativeEventLog` read-modify-write nulis ulang seluruh file tiap
-  event tapi dibatasi ≤100 baris (beberapa KB) — aman.
+- **Catatan:** (1) position-poll `PlayerPlugin` repost tiap 1 dtk walau idle/pause — **kini
+  ditindaklanjuti** (lihat entri "position-poll adaptif" di atas). (2) `NativeEventLog`
+  read-modify-write nulis ulang seluruh file tiap event tapi dibatasi ≤100 baris (beberapa KB) — aman,
+  tak diubah.
 - Validasi: brace/paren balance semua `.kt` seimbang; perubahan murni lifecycle Android (tak ada
   logika murni untuk disimulasikan Vitest), jadi divalidasi lewat pembacaan kode + simetri. **Bukti
   akhir tetap: build CI + perilaku device.**

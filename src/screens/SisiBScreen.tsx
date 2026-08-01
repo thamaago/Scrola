@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { getHistoryInRange, getDistinctArtistsBefore } from '../lib/db/queries';
 import {
@@ -7,6 +7,8 @@ import {
   formatDurationHuman,
   type SisiBStats,
 } from '../lib/sisiBLogic';
+import { renderSisiBZine } from '../lib/sisiBZineImage';
+import { SharePlugin } from '../lib/share';
 
 const HARI = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 
@@ -33,6 +35,10 @@ export default function SisiBScreen({
   // supaya transisi CSS-nya benar-benar terlihat (kalau langsung di nilai akhir, tidak ada animasi).
   const [barsIn, setBarsIn] = useState(false);
   const [weekLabel, setWeekLabel] = useState('');
+  const [weekStartSec, setWeekStartSec] = useState<number | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const sharingRef = useRef(false);
 
   useEffect(() => {
     if (!open) {
@@ -58,6 +64,7 @@ export default function SisiBScreen({
 
         const result = computeSisiBStats(rows, artistsBefore, weekStartSec);
         setStats(result);
+        setWeekStartSec(weekStartSec);
 
         const weekEnd = new Date((weekStartSec + 6 * 86400) * 1000);
         const fmt = (d: Date) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
@@ -93,6 +100,28 @@ export default function SisiBScreen({
 
   const maxDayCount = stats ? Math.max(...stats.dayCounts, 1) : 1;
   const busiestDay = stats ? stats.dayCounts.indexOf(Math.max(...stats.dayCounts)) : -1;
+
+  async function handleShare() {
+    if (sharingRef.current || !stats || weekStartSec === null) return;
+    sharingRef.current = true;
+    setSharing(true);
+    setShareError(null);
+    try {
+      const base64 = await renderSisiBZine(stats, weekStartSec);
+      await SharePlugin.shareImage({
+        base64,
+        filename: 'scrola-sisib.png',
+        title: 'Bagikan Sisi B',
+      });
+    } catch (e) {
+      console.warn('Gagal membagikan Sisi B:', e);
+      setShareError('Gagal menyiapkan gambar. Coba lagi.');
+      setTimeout(() => setShareError(null), 3000);
+    } finally {
+      sharingRef.current = false;
+      setSharing(false);
+    }
+  }
   const hasData = stats != null && stats.totalTracks > 0;
 
   return (
@@ -245,15 +274,19 @@ export default function SisiBScreen({
               </button>
             )}
 
-            {/* Fitur share ditandai jujur sebagai belum tersedia — lebih baik daripada tombol
-                yang tidak melakukan apa-apa saat ditekan. Ada di backlog DEVLOG. */}
+            {/* Ekspor recap sebagai zine gambar (Canvas -> PNG -> share native). */}
             <button
-              disabled
-              className="border border-amber/40 text-amber font-body font-semibold text-sm rounded-lg py-3.5 px-6 opacity-40 cursor-not-allowed"
-              title="Belum tersedia"
+              onClick={handleShare}
+              disabled={sharing || !stats || weekStartSec === null}
+              className="border border-amber/40 text-amber font-body font-semibold text-sm rounded-lg py-3.5 px-6 active:scale-[0.99] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Bagikan sebagai tiket (segera)
+              {sharing ? 'Menyiapkan…' : 'Bagikan sebagai zine'}
             </button>
+            {shareError && (
+              <p className="text-center text-xs text-red-300 mt-2" role="alert">
+                {shareError}
+              </p>
+            )}
           </>
         )}
       </div>

@@ -25,6 +25,9 @@ dengan riwayat scrobble bergaya "tiket cerita".
 > - [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — kode etik kontributor.
 > - [`docs/RELEASES.md`](./docs/RELEASES.md) — catatan rilis siap-tempel untuk GitHub Releases +
 >   roadmap versi + kelebihan aplikasi.
+> - [`docs/POSITIONING.md`](./docs/POSITIONING.md) — positioning pasar Indonesia (untuk siapa &
+>   kenapa, wedge lokal, perbandingan jujur vs Pano Scrobbler). Rujukan saat menulis deskripsi
+>   Play Store / materi rilis.
 > - [`docs/GITHUB_SETUP.md`](./docs/GITHUB_SETUP.md) — checklist langkah manual di GitHub UI
 >   (secrets, branch protection, rilis pertama) yang tidak bisa diotomasi dari scaffold ini.
 > - [`docs/PANDUAN_API_KEY.md`](./docs/PANDUAN_API_KEY.md) — **panduan langkah-demi-langkah
