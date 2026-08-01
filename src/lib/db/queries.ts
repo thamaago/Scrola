@@ -1,5 +1,6 @@
 import { getDb, runWriteWithRecovery } from './db';
 import type { TrackInfo } from '../lastfm';
+import type { BackupHistoryRow, LocalHistoryRow } from '../backupData';
 import {
   computeEarnedTickets,
   computeTicketProgress,
@@ -163,6 +164,57 @@ export async function getHistory(limit = 100, offset = 0): Promise<HistoryRow[]>
     [limit, offset]
   );
   return ((res.values as any[]) ?? []).map((r) => ({ ...r, loved: !!r.loved }));
+}
+
+/**
+ * Ambil SELURUH riwayat untuk backup (tanpa limit), dipetakan ke bentuk backupData: `loved`->
+ * `favorite`, `duration`->`durationSec`. Diurut kronologis supaya file backup stabil/diff-able.
+ */
+export async function getAllHistoryForBackup(): Promise<LocalHistoryRow[]> {
+  const db = await getDb();
+  const res = await db.query(
+    `SELECT id, artist, track, album, album_artist as albumArtist, duration as durationSec,
+            timestamp, loved, source_package as sourcePackage, note
+     FROM scrobble_history ORDER BY timestamp ASC;`
+  );
+  return ((res.values as any[]) ?? []).map((r) => ({
+    id: r.id,
+    artist: r.artist,
+    track: r.track,
+    timestamp: r.timestamp,
+    album: r.album ?? null,
+    albumArtist: r.albumArtist ?? null,
+    durationSec: typeof r.durationSec === 'number' ? r.durationSec : null,
+    sourcePackage: r.sourcePackage ?? null,
+    note: r.note ?? null,
+    favorite: !!r.loved,
+  }));
+}
+
+/**
+ * Sisipkan baris riwayat dari backup (restore ke DB kosong / baris yang hilang), LENGKAP dengan
+ * note & loved. Atomik lewat executeSet (pola & alasan sama dengan addHistoryBatch).
+ */
+export async function insertBackupRows(rows: BackupHistoryRow[]) {
+  if (rows.length === 0) return;
+  const db = await getDb();
+  const set = rows.map((r) => ({
+    statement: `INSERT INTO scrobble_history
+                (artist, track, album, album_artist, duration, timestamp, source_package, note, loved)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    values: [
+      r.artist,
+      r.track,
+      r.album ?? null,
+      r.albumArtist ?? null,
+      r.durationSec ?? null,
+      r.timestamp,
+      r.sourcePackage ?? null,
+      r.note ?? null,
+      r.favorite ? 1 : 0,
+    ],
+  }));
+  await runWriteWithRecovery(() => db.executeSet(set, /* transaction = */ true), 'insertBackupRows');
 }
 
 /**

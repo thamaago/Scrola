@@ -116,4 +116,54 @@ class SharePlugin : Plugin() {
             call.reject("Gagal membagikan gambar: ${e.message}", e)
         }
     }
+
+    /**
+     * shareFile({ content: String, filename?: String, mimeType?: String, title?: String })
+     * content = teks mentah (mis. JSON backup) yang ditulis ke file di cacheDir lalu dibagikan lewat
+     * share sheet. Pola & alasan (FileProvider, cacheDir, pembersihan di load()) sama dengan shareImage.
+     * Dipakai untuk export backup data — TIDAK menambah dependensi npm/SDK baru (prinsip ringan).
+     */
+    @PluginMethod
+    fun shareFile(call: PluginCall) {
+        val content = call.getString("content")
+        if (content == null) {
+            call.reject("Parameter 'content' wajib diisi")
+            return
+        }
+        val filename = call.getString("filename") ?: "scrola-backup.json"
+        val mimeType = call.getString("mimeType") ?: "application/json"
+        val title = call.getString("title") ?: "Bagikan file"
+
+        var file: File? = null
+        try {
+            val dir = File(context.cacheDir, shareDirName)
+            if (!dir.exists() && !dir.mkdirs()) {
+                call.reject("Gagal menyiapkan folder sementara untuk file")
+                return
+            }
+            file = File(dir, filename)
+            file.writeBytes(content.toByteArray(Charsets.UTF_8))
+
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(sendIntent, title).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            if (sendIntent.resolveActivity(context.packageManager) == null) {
+                call.reject("Tidak ada aplikasi yang bisa menerima file di perangkat ini")
+                file.delete()
+                return
+            }
+            context.startActivity(chooser)
+            call.resolve()
+        } catch (e: Exception) {
+            file?.delete()
+            call.reject("Gagal membagikan file: ${e.message}", e)
+        }
+    }
 }

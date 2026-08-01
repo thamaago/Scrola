@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { NowPlaying, type NowPlayingState } from '../hooks/useNowPlaying';
 import { clearSession } from '../lib/secureStore';
@@ -7,6 +7,8 @@ import { getExternalScrobbleEnabled, setExternalScrobbleEnabled } from '../lib/p
 import { getAccountStats, getQueueStatus } from '../lib/db/queries';
 import { flushQueue } from '../lib/scrobbleEngine';
 import { sourceLabel } from '../lib/sourceLabels';
+import { buildBackupJson, restoreFromJson, type RestoreSummary } from '../lib/backupService';
+import { SharePlugin } from '../lib/share';
 
 export default function SettingsScreen({
   username,
@@ -143,6 +145,62 @@ export default function SettingsScreen({
 
   const externalNowPlaying =
     current && current.packageName !== 'com.scrola.app' ? current : null;
+
+  // ===== Cadangan data =====
+  const [backupBusy, setBackupBusy] = useState<null | 'export' | 'import'>(null);
+  const [backupMsg, setBackupMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleExportBackup() {
+    if (backupBusy) return;
+    setBackupBusy('export');
+    setBackupMsg(null);
+    try {
+      const json = await buildBackupJson();
+      const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      await SharePlugin.shareFile({
+        content: json,
+        filename: `scrola-backup-${stamp}.json`,
+        mimeType: 'application/json',
+        title: 'Simpan cadangan Scrola',
+      });
+      setBackupMsg({ kind: 'ok', text: 'Cadangan disiapkan. Simpan file-nya ke tempat yang aman (Drive, dll).' });
+    } catch (e) {
+      console.warn('Gagal membuat cadangan:', e);
+      setBackupMsg({ kind: 'err', text: 'Gagal membuat cadangan. Coba lagi.' });
+    } finally {
+      setBackupBusy(null);
+    }
+  }
+
+  function summaryText(s: RestoreSummary): string {
+    const parts = [
+      `${s.notesRestored} catatan dipulihkan`,
+      `${s.favoritesRestored} favorit`,
+      `${s.inserted} riwayat disisipkan`,
+    ];
+    if (s.conflicts > 0) parts.push(`${s.conflicts} catatan lokal dipertahankan (tak ditimpa)`);
+    return parts.join(' · ');
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // reset supaya memilih file yang sama lagi tetap memicu onChange
+    if (!file || backupBusy) return;
+    setBackupBusy('import');
+    setBackupMsg(null);
+    try {
+      const text = await file.text();
+      const summary = await restoreFromJson(text);
+      setBackupMsg({ kind: 'ok', text: `Pulih: ${summaryText(summary)}.` });
+    } catch (err) {
+      // parseBackup melempar pesan Indonesia yang deskriptif untuk file rusak/bukan-backup.
+      const msg = err instanceof Error ? err.message : 'File tidak bisa dibaca.';
+      setBackupMsg({ kind: 'err', text: msg });
+    } finally {
+      setBackupBusy(null);
+    }
+  }
 
   return (
     <div className="min-h-screen px-5 pt-8 pb-24">
@@ -447,6 +505,51 @@ export default function SettingsScreen({
             <pre className="bg-ink rounded-lg p-3 text-[11px] text-muted font-mono whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
               {eventLog || '(kosong — belum ada peristiwa terekam)'}
             </pre>
+          )}
+        </div>
+      </section>
+
+      {/* ===== Cadangan Data ===== */}
+      <section className="mb-6">
+        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">Cadangan Data</p>
+        <div className="bg-surface rounded-[10px] py-4 px-4">
+          <p className="text-paper text-sm mb-1">Simpan catatan &amp; favoritmu</p>
+          <p className="text-muted text-xs mb-3.5 leading-relaxed">
+            Catatan per-lagu hanya ada di HP ini. Update biasa tidak menghapusnya, tapi install ulang,
+            ganti HP, atau &ldquo;Clear data&rdquo; bisa. Buat cadangan file (JSON) yang kamu pegang
+            sendiri — tanpa cloud. Memulihkan bersifat aman: tidak pernah menimpa catatan yang sudah ada.
+          </p>
+          <div className="flex gap-2.5">
+            <button
+              onClick={handleExportBackup}
+              disabled={backupBusy !== null}
+              className="flex-1 border border-amber/40 text-amber font-body font-semibold text-sm rounded-lg py-3 active:scale-[0.99] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {backupBusy === 'export' ? 'Menyiapkan…' : 'Buat cadangan'}
+            </button>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={backupBusy !== null}
+              className="flex-1 border border-white/15 text-paper font-body font-semibold text-sm rounded-lg py-3 active:scale-[0.99] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {backupBusy === 'import' ? 'Memulihkan…' : 'Pulihkan dari file'}
+            </button>
+          </div>
+          {/* input file tersembunyi — dibaca langsung di WebView (FileReader), tanpa plugin native. */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+          {backupMsg && (
+            <p
+              className={`text-xs mt-3 leading-relaxed ${backupMsg.kind === 'ok' ? 'text-amber' : 'text-red-300'}`}
+              role="status"
+            >
+              {backupMsg.text}
+            </p>
           )}
         </div>
       </section>

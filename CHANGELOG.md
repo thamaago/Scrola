@@ -17,6 +17,25 @@ tooling).
 
 ## [Unreleased]
 
+### Added — backup/restore data (catatan & favorit) via file JSON
+- Catatan per-lagu adalah data buatan-pengguna yang tak tergantikan. Upgrade di tempat tidak
+  menghapusnya, TAPI reinstall / ganti HP / "Clear data" / APK berkunci-beda menghapusnya — dan
+  `allowBackup="false"` (sengaja, demi privasi) berarti tak ada jaring cloud. Kini ada backup manual
+  JSON: file dipegang pengguna, tanpa cloud, selaras positioning privasi.
+- **Core murni** `backupData.ts`: `serializeBackup` (envelope berversi), `parseBackup` (validasi ketat
+  → menolak file rusak/bukan-backup dgn pesan jelas), `mergeBackup` (**NON-DESTRUKTIF**: pulihkan
+  catatan hanya ke baris yang belum bercatatan, sisipkan baris hilang, favorit aditif — tak pernah
+  menimpa/mengosongkan catatan lokal atau meng-unfavorite; konflik dicatat, lokal menang). TDD, 11 test.
+- **Wiring:** `backupService.ts` (orkestrasi DB+merge); query `getAllHistoryForBackup` +
+  `insertBackupRows` (insert restore lengkap dgn note & loved, atomik via executeSet); method native
+  `shareFile` di plugin Share Kotlin (menulis JSON ke cacheDir → FileProvider → share sheet — **tanpa
+  dependensi npm/SDK baru**); tombol **Buat cadangan** (export) & **Pulihkan dari file** (import via
+  `<input type=file>` WebView → FileReader → parse → merge → terapkan) di `SettingsScreen`, dengan
+  ringkasan hasil ("X catatan dipulihkan · Y favorit · Z konflik dipertahankan").
+- Validasi: **194 test lolos**, `tsc` bersih (rantai backupService→queries→share→SettingsScreen
+  typecheck), brace `.ts/.tsx/.kt` seimbang. Bagian native (`shareFile`) + import file **belum
+  tervalidasi device** — bukti akhir: CI + uji export→simpan→install ulang→pulihkan di SM-X706B.
+
 ### Docs — positioning pasar Indonesia diformalkan
 - `docs/POSITIONING.md` baru: mengonsolidasikan positioning yang selama ini tersebar (README,
   `DESIGN.md` §kompetitif, `RELEASES.md` §"Kenapa Scrola?") jadi satu pernyataan posisi pasar
