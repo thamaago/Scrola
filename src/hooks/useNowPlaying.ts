@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { registerPlugin } from '@capacitor/core';
-import { notifyNowPlaying, enqueueScrobble } from '../lib/scrobbleEngine';
+import { notifyNowPlaying, enqueueScrobbleNoFlush, flushQueue } from '../lib/scrobbleEngine';
 import { diag } from '../lib/diagnostics';
 import {
   createTracker,
@@ -80,8 +80,9 @@ export async function drainAndFlushNative(): Promise<number> {
         sourcePackage: s.sourcePackage,
       });
       const finalMeta = applyCorrection(cleaned, rules);
-      // enqueueScrobble sudah memanggil flushQueue di akhir (dengan guard anti-tumpang-tindih).
-      await enqueueScrobble(
+      // Drain backlog: enqueue TANPA flush per track. Satu flushQueue di akhir loop (di bawah)
+      // membiarkan getQueueBatch(MAX_SCROBBLE_BATCH) mengirim per batch ≤50 — bukan 1 API call/track.
+      await enqueueScrobbleNoFlush(
         {
           artist: finalMeta.artist,
           track: finalMeta.track,
@@ -96,6 +97,8 @@ export async function drainAndFlushNative(): Promise<number> {
       console.warn('Gagal memproses scrobble latar:', e);
     }
   }
+  // Satu flush untuk seluruh backlog yang barusan di-enqueue.
+  if (done > 0) await flushQueue();
   return done;
 }
 

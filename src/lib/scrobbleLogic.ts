@@ -67,3 +67,27 @@ export function buildSignatureBase(params: Record<string, string | number | unde
     .sort();
   return keys.map((k) => `${k}${params[k]}`).join('');
 }
+
+// Batas jumlah scrobble per satu panggilan track.scrobble Last.fm. Antrean dikirim per grup
+// sebesar ini (lihat getQueueBatch di flushQueueOnce) — dulu hardcoded 50, kini bernama supaya
+// jalur produksi & test memakai angka yang sama.
+export const MAX_SCROBBLE_BATCH = 50;
+
+/**
+ * Pisahkan satu batch antrean jadi baris yang MASIH layak dikirim (`toSend`) vs baris "beracun"
+ * yang sudah melewati `maxAttempts` dan harus dibuang (`toDrop`). Murni: tidak menyentuh DB atau
+ * jaringan — hanya keputusan partisi yang sebelumnya ter-inline di flushQueueOnce, dipisah agar
+ * bisa diuji sendiri. Urutan asli dipertahankan supaya urutan kirim (dan timestamp) tak teracak.
+ */
+export function partitionByAttempts<T extends { attempts: number }>(
+  rows: T[],
+  maxAttempts: number
+): { toSend: T[]; toDrop: T[] } {
+  const toSend: T[] = [];
+  const toDrop: T[] = [];
+  for (const r of rows) {
+    if (r.attempts >= maxAttempts) toDrop.push(r);
+    else toSend.push(r);
+  }
+  return { toSend, toDrop };
+}

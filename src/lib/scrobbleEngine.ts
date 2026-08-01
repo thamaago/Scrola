@@ -12,7 +12,7 @@
  */
 import { loadSession } from './secureStore';
 import { scrobbleBatch, updateNowPlaying, type TrackInfo } from './lastfm';
-import { parseScrobbleResponse, isScrobbleEligible } from './scrobbleLogic';
+import { parseScrobbleResponse, isScrobbleEligible, partitionByAttempts, MAX_SCROBBLE_BATCH } from './scrobbleLogic';
 import { flushPendingNotes } from './pendingNotes';
 import { diag } from './diagnostics';
 import {
@@ -37,6 +37,15 @@ const MAX_ATTEMPTS = 8;
 let isFlushing = false;
 
 export async function enqueueScrobble(track: TrackInfo, sourcePackage?: string) {
+  await enqueueScrobbleNoFlush(track, sourcePackage);
+  await flushQueue(sourcePackage);
+}
+
+// Sama seperti enqueueScrobble TAPI tanpa flush di akhir. Dipakai jalur DRAIN backlog
+// (drainAndFlushNative): enqueue semua track dulu, lalu SATU flushQueue di akhir — supaya
+// getQueueBatch(MAX_SCROBBLE_BATCH) benar-benar menumpuk & mengirim per batch ≤50, bukan
+// satu panggilan Last.fm per track (yang untuk backlog ratusan track jadi ratusan round-trip).
+export async function enqueueScrobbleNoFlush(track: TrackInfo, sourcePackage?: string) {
   const timestamp = track.timestamp ?? Math.floor(Date.now() / 1000);
   diag(`enqueue MASUK: ${track.artist} - ${track.track} (src=${sourcePackage ?? '?'})`);
   try {
@@ -46,7 +55,6 @@ export async function enqueueScrobble(track: TrackInfo, sourcePackage?: string) 
     diag(`addToQueue GAGAL: ${(e as Error).message}`);
     throw e;
   }
-  await flushQueue(sourcePackage);
 }
 
 export async function flushQueue(sourcePackage?: string) {
@@ -72,18 +80,23 @@ async function flushQueueOnce(sourcePackage?: string) {
     diag(`flush BERHENTI: sesi NULL (belum login?) — scrobble tertahan di antrean`);
     return; // belum login, biarkan di antrean sampai user connect
   }
+  // Antrean kosong: flush ini no-op. JANGAN tulis apa pun ke Log Peristiwa — timer 20 dtk yang
+  // menyala terus (App.tsx) akan memenuhi ring-buffer 100 baris dengan baris "mulai kirim batch"
+  // kosong dan menggusur baris diagnostik yang berguna. Cek murah dulu sebelum log.
+  const pending = await getQueueBatch(1);
+  if (pending.length === 0) return;
   diag(`flush: sesi OK, mulai kirim batch`);
 
   // Loop alih-alih rekursi: antrean offline yang menumpuk lama bisa berisi ratusan track,
   // dan memanggil flushQueueOnce secara rekursif per-batch berisiko menumpuk call stack dalam.
   // Loop menjaga penggunaan stack tetap datar berapa pun panjang antrean.
   while (true) {
-    const fullBatch = await getQueueBatch(50);
+    const fullBatch = await getQueueBatch(MAX_SCROBBLE_BATCH);
     if (fullBatch.length === 0) return;
 
-    // Pisahkan baris yang sudah melewati batas percobaan — jangan ikut dikirim lagi,
-    // buang saja supaya tidak menyumbat slot batch untuk baris lain yang masih punya harapan.
-    const exhausted = fullBatch.filter((row) => row.attempts >= MAX_ATTEMPTS);
+    // Pisahkan baris beracun (lewat batas percobaan) dari yang masih layak — logika murni,
+    // diuji di scrobbleBatching.test.ts. Yang beracun dibuang supaya tak menyumbat slot batch.
+    const { toSend: batch, toDrop: exhausted } = partitionByAttempts(fullBatch, MAX_ATTEMPTS);
     if (exhausted.length > 0) {
       console.warn(
         `Membuang ${exhausted.length} scrobble dari antrean setelah ${MAX_ATTEMPTS}x gagal:`,
@@ -91,7 +104,6 @@ async function flushQueueOnce(sourcePackage?: string) {
       );
       await removeFromQueue(exhausted.map((r) => r.id));
     }
-    const batch = fullBatch.filter((row) => row.attempts < MAX_ATTEMPTS);
     if (batch.length === 0) {
       // Semua yang tersisa di batch ini exhausted & sudah dibuang. Cek apakah masih ada baris
       // lain di antrean (yang belum exhausted) sebelum menyimpulkan antrean kosong.

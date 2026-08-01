@@ -17,6 +17,32 @@ tooling).
 
 ## [Unreleased]
 
+### Changed — drain backlog kini per-batch (≤50), bukan 1 API call/track
+- **Sebelumnya:** `drainAndFlushNative` memanggil `enqueueScrobble` per track, dan tiap enqueue
+  langsung flush → tiap track jadi satu panggilan `track.scrobble` sendiri (terlihat di log device
+  13:13: `scrobbleBatch KIRIM: 1 track` berulang 14×). Untuk backlog ratusan track (offline lama)
+  ini jadi ratusan round-trip berurutan — lambat & rawan throttle Last.fm.
+- **Sekarang:** `enqueueScrobble` dipecah jadi `enqueueScrobbleNoFlush` (enqueue saja) + versi biasa
+  (enqueue + flush, untuk scrobble real-time tunggal). Drain memakai NoFlush untuk SEMUA track lalu
+  **satu** `flushQueue` di akhir; `getQueueBatch(MAX_SCROBBLE_BATCH=50)` yang sudah ada kini benar-benar
+  menumpuk & mengirim per batch ≤50. Ratusan track → ~⌈N/50⌉ panggilan, bukan N.
+- Perilaku scrobble real-time tunggal (dari listener) TIDAK berubah — tetap flush tiap track.
+- **Pure-logic + TDD:** partisi baris beracun/layak diekstrak jadi `partitionByAttempts` di
+  `scrobbleLogic.ts` (dulu inline di `flushQueueOnce`) + konstanta `MAX_SCROBBLE_BATCH`. RED→GREEN,
+  **6 test baru**, total **164 test lolos**. `tsc` bersih (2 error `Intl.Segmenter` pra-ada tak terkait).
+- **Belum tervalidasi device** untuk build ini: bukti akhir tetap CI + perilaku SM-X706B. Yang diharap
+  di log berikutnya saat backlog besar: satu baris `scrobbleBatch KIRIM: N track` (N>1), bukan N baris `1 track`.
+
+### Fixed — Log Peristiwa tak lagi dipenuhi flush kosong
+- Timer sinkronisasi 20 dtk (`App.tsx`) memanggil `flushQueue` terus-menerus. `flushQueueOnce` menulis
+  `flush: sesi OK, mulai kirim batch` ke Log Peristiwa SEBELUM mengecek antrean kosong — sehingga saat
+  idle, ring-buffer 100 baris terisi noise dan menggusur baris diagnostik berguna (terlihat di log
+  device: baris tsb berulang tiap 20 dtk tanpa scrobble apa pun sesudahnya).
+- Kini flush yang antreannya kosong = no-op senyap (cek `getQueueBatch(1)` murah dulu, baru log).
+- **Tervalidasi device:** log 13:13:31–36 menunjukkan pipeline scrobble tembus penuh — 14 track Spotify
+  berturut, `Last.fm terima 1/1` + `addHistoryBatch OK` semua, 0 ditolak. Timestamp asli (waktu mulai)
+  ikut terkirim sesuai spek Last.fm. Isu "core scrobble belum tervalidasi device" — **selesai.**
+
 ### Internal — audit RAM/memory (lanjutan sesi sebelumnya)
 - Audit jejak memori/lifecycle native. Kondisi awal ternyata sudah rapi: `PlaybackService.onDestroy`
   memanggil `cancelIdleStop()` + `player.release()` + `mediaSession.release()`; `PlayerPlugin`
