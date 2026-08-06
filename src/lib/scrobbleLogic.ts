@@ -102,3 +102,25 @@ export function partitionByAttempts<T extends { attempts: number }>(
   }
   return { toSend, toDrop };
 }
+
+// Placeholder artist "tak dikenal" (berbagai bahasa/bentuk) — bukan artis sungguhan.
+const UNKNOWN_ARTIST = new Set(['tidak dikenal', 'unknown', 'unknown artist', '<unknown>', 'artis tidak dikenal']);
+
+/** Judul yang sebenarnya content-URI / document-id (fallback saat file lokal tak punya tag ID3). */
+function looksLikeUriTitle(s: string): boolean {
+  return /^(content|file|audio|https?):/i.test(s) || /%3a/i.test(s) || s.includes('://');
+}
+
+/**
+ * Apakah pasangan (artist, track) layak di-scrobble ke Last.fm? Menolak metadata SAMPAH: artist
+ * kosong / placeholder "tak dikenal", atau judul yang sebetulnya content-URI/document-id (mis.
+ * file lokal tanpa tag ID3 → judul jatuh ke "audio%3A1000343174"). Mencegah mengotori profil
+ * Last.fm pengguna dengan entri tak berarti sampai metadata jelas (mis. setelah diedit tag-nya).
+ */
+export function isScrobbableMetadata(artist: string | null | undefined, track: string | null | undefined): boolean {
+  const a = (artist ?? '').trim();
+  const t = (track ?? '').trim();
+  if (a === '' || UNKNOWN_ARTIST.has(a.toLowerCase())) return false;
+  if (t === '' || looksLikeUriTitle(t)) return false;
+  return true;
+}

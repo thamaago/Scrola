@@ -143,57 +143,83 @@ class Mp3MetadataPlugin : Plugin() {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
+            call.resolve(readMp3MetadataFromUri(uri))
+        } catch (e: Exception) {
+            call.reject("Gagal membaca metadata MP3: ${e.message}", e)
+        }
+    }
 
-            val tempFile = copyUriToTemp(uri, "read_")
-            try {
-                val mp3 = Mp3File(tempFile.absolutePath)
+    /**
+     * Baca tag ID3 dari sebuah content-URI dan kembalikan sebagai JSObject (bentuk sama dengan
+     * hasil pickMp3ToEdit). Dipakai bersama oleh picker & readMetadata (buka langsung file yang
+     * sedang diputar). TIDAK meminta izin — pemanggil bertanggung jawab memastikan URI dapat dibaca.
+     */
+    private fun readMp3MetadataFromUri(uri: Uri): JSObject {
+        val tempFile = copyUriToTemp(uri, "read_")
+        try {
+            val mp3 = Mp3File(tempFile.absolutePath)
+            val tagV2 = mp3.id3v2Tag
+            val tagV1 = mp3.id3v1Tag
 
-                // PENTING: ID3v1Tag dan interface ID3v2 (dasar ID3v23Tag/ID3v24Tag) BUKAN tipe
-                // yang kompatibel satu sama lain di mp3agic — sebelumnya kode ini mencoba
-                // menggabungkannya lewat satu ekspresi elvis (`v2Tag ?: v1Tag`) yang berisiko
-                // tidak valid secara tipe. Sekarang keduanya dibaca terpisah, lalu HASIL STRING-nya
-                // (bukan objek tag-nya) yang digabung — ini valid untuk tipe apa pun karena
-                // String? selalu bisa di-elvis dengan String? lain.
-                val tagV2 = mp3.id3v2Tag
-                val tagV1 = mp3.id3v1Tag
+            val title = tagV2?.title ?: tagV1?.title ?: ""
+            val artist = tagV2?.artist ?: tagV1?.artist ?: ""
+            val album = tagV2?.album ?: tagV1?.album ?: ""
+            val year = tagV2?.year ?: tagV1?.year ?: ""
+            val genre = tagV2?.genreDescription ?: tagV1?.genreDescription ?: ""
+            val albumArtist = when (tagV2) {
+                is ID3v24Tag -> tagV2.albumArtist
+                is ID3v23Tag -> tagV2.albumArtist
+                else -> null
+            } ?: ""
 
-                val title = tagV2?.title ?: tagV1?.title ?: ""
-                val artist = tagV2?.artist ?: tagV1?.artist ?: ""
-                val album = tagV2?.album ?: tagV1?.album ?: ""
-                val year = tagV2?.year ?: tagV1?.year ?: ""
-                val genre = tagV2?.genreDescription ?: tagV1?.genreDescription ?: ""
-                // Album artist (frame TPE2) cuma didukung tag ID3v2 versi tertentu di mp3agic,
-                // tidak ada padanannya di ID3v1 sama sekali.
-                val albumArtist = when (tagV2) {
-                    is ID3v24Tag -> tagV2.albumArtist
-                    is ID3v23Tag -> tagV2.albumArtist
-                    else -> null
-                } ?: ""
+            val res = JSObject()
+            res.put("uri", uri.toString())
+            res.put("title", title)
+            res.put("artist", artist)
+            res.put("album", album)
+            res.put("albumArtist", albumArtist)
+            res.put("year", year)
+            res.put("genre", genre)
 
-                val res = JSObject()
-                res.put("uri", uri.toString())
-                res.put("title", title)
-                res.put("artist", artist)
-                res.put("album", album)
-                res.put("albumArtist", albumArtist)
-                res.put("year", year)
-                res.put("genre", genre)
-
-                // Album art hanya mungkin ada di tag v2 (ID3v1 tidak mendukung artwork sama sekali).
-                val albumImage = tagV2?.albumImage
-                if (tagV2 != null && albumImage != null) {
-                    val mime = tagV2.albumImageMimeType ?: "image/jpeg"
-                    res.put(
-                        "albumArt",
-                        "data:$mime;base64," + android.util.Base64.encodeToString(albumImage, android.util.Base64.NO_WRAP)
-                    )
-                } else {
-                    res.put("albumArt", null)
-                }
-                call.resolve(res)
-            } finally {
-                tempFile.delete()
+            val albumImage = tagV2?.albumImage
+            if (tagV2 != null && albumImage != null) {
+                val mime = tagV2.albumImageMimeType ?: "image/jpeg"
+                res.put(
+                    "albumArt",
+                    "data:$mime;base64," + android.util.Base64.encodeToString(albumImage, android.util.Base64.NO_WRAP)
+                )
+            } else {
+                res.put("albumArt", null)
             }
+            return res
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    /**
+     * Baca metadata MP3 dari URI yang SUDAH dimiliki app (mis. file yang sedang diputar pemutar
+     * internal), tanpa memunculkan picker. Memungkinkan "edit tag lagu yang sedang diputar" langsung.
+     */
+    @PluginMethod
+    fun readMetadata(call: PluginCall) {
+        val uriStr = call.getString("uri")
+        if (uriStr.isNullOrBlank()) {
+            call.reject("Parameter 'uri' wajib diisi")
+            return
+        }
+        try {
+            val uri = Uri.parse(uriStr)
+            // Coba naikkan ke READ+WRITE bila belum, supaya bisa langsung disimpan. Kalau provider
+            // tak mengizinkan (mis. hanya READ), abaikan — pembacaan tetap jalan, penyimpanan yang
+            // akan gagal jelas nanti dengan pesannya sendiri.
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: Exception) { /* izin write mungkin tak tersedia; lanjut baca */ }
+            call.resolve(readMp3MetadataFromUri(uri))
         } catch (e: Exception) {
             call.reject("Gagal membaca metadata MP3: ${e.message}", e)
         }

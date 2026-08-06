@@ -12,7 +12,8 @@
  */
 import { loadSession } from './secureStore';
 import { scrobbleBatch, updateNowPlaying, type TrackInfo } from './lastfm';
-import { parseScrobbleResponse, isScrobbleEligible, partitionByAttempts, MAX_SCROBBLE_BATCH } from './scrobbleLogic';
+import { parseScrobbleResponse, isScrobbleEligible, partitionByAttempts, MAX_SCROBBLE_BATCH, isScrobbableMetadata } from './scrobbleLogic';
+import { canAttempt, nextBackoffState, INITIAL_BACKOFF, type BackoffState } from './backoffPolicy';
 import { flushPendingNotes } from './pendingNotes';
 import { diag } from './diagnostics';
 import {
@@ -36,6 +37,11 @@ const MAX_ATTEMPTS = 8;
 // dan menduplikasi entri di scrobble_history.
 let isFlushing = false;
 
+// Kebijakan backoff (murni, diuji di backoffPolicy.test.ts) untuk menghindari retry menghantam
+// Last.fm saat rate-limit/jaringan down. State in-memory: reset saat app restart (percobaan segar).
+type FlushOutcome = 'ok' | 'noop' | 'rate_limited' | 'error';
+let backoff: BackoffState = { ...INITIAL_BACKOFF };
+
 export async function enqueueScrobble(track: TrackInfo, sourcePackage?: string) {
   await enqueueScrobbleNoFlush(track, sourcePackage);
   await flushQueue(sourcePackage);
@@ -46,6 +52,13 @@ export async function enqueueScrobble(track: TrackInfo, sourcePackage?: string) 
 // getQueueBatch(MAX_SCROBBLE_BATCH) benar-benar menumpuk & mengirim per batch ≤50, bukan
 // satu panggilan Last.fm per track (yang untuk backlog ratusan track jadi ratusan round-trip).
 export async function enqueueScrobbleNoFlush(track: TrackInfo, sourcePackage?: string) {
+  // Jangan pernah scrobble metadata sampah (mis. file lokal tanpa tag ID3 → judul jatuh ke
+  // content-URI "audio%3A...", artist "Tidak dikenal"). Mengotori profil Last.fm pengguna dengan
+  // entri tak berarti. Biarkan lagunya tetap bisa diputar/diedit; scrobble menyusul setelah jelas.
+  if (!isScrobbableMetadata(track.artist, track.track)) {
+    diag(`enqueue DILEWATI: metadata belum jelas (${track.artist || '∅'} - ${track.track || '∅'})`);
+    return;
+  }
   const timestamp = track.timestamp ?? Math.floor(Date.now() / 1000);
   diag(`enqueue MASUK: ${track.artist} - ${track.track} (src=${sourcePackage ?? '?'})`);
   try {
@@ -59,32 +72,43 @@ export async function enqueueScrobbleNoFlush(track: TrackInfo, sourcePackage?: s
 
 export async function flushQueue(sourcePackage?: string) {
   if (isFlushing) return;
+  // Hormati backoff: kalau flush terakhir gagal/rate-limit, lewati sampai jendela retry tiba.
+  // Timer 20 dtk (App.tsx) tetap menyala; tick yang jatuh dalam jendela backoff cukup dilewati.
+  if (!canAttempt(backoff, Date.now())) return;
   isFlushing = true;
   try {
-    await flushQueueOnce(sourcePackage);
+    const outcome = await flushQueueOnce(sourcePackage);
+    if (outcome === 'ok') {
+      backoff = nextBackoffState(backoff, 'success', Date.now());
+    } else if (outcome === 'rate_limited' || outcome === 'error') {
+      backoff = nextBackoffState(backoff, 'failure', Date.now());
+      const waitMs = backoff.nextAllowedAtMs - Date.now();
+      diag(`flush ${outcome} → backoff ~${Math.round(waitMs / 1000)}s (gagal ke-${backoff.consecutiveFailures})`);
+    }
+    // 'noop' (belum login / antrean kosong): jangan ubah state backoff.
   } finally {
     isFlushing = false;
   }
 }
 
-async function flushQueueOnce(sourcePackage?: string) {
+async function flushQueueOnce(sourcePackage?: string): Promise<FlushOutcome> {
   let session: Awaited<ReturnType<typeof loadSession>>;
   try {
     session = await loadSession();
   } catch (e) {
     console.warn('Gagal membaca session tersimpan, tunda pengiriman antrean:', e);
     diag(`flush BERHENTI: gagal baca sesi - ${(e as Error).message}`);
-    return;
+    return 'noop';
   }
   if (!session) {
     diag(`flush BERHENTI: sesi NULL (belum login?) — scrobble tertahan di antrean`);
-    return; // belum login, biarkan di antrean sampai user connect
+    return 'noop'; // belum login, biarkan di antrean sampai user connect
   }
   // Antrean kosong: flush ini no-op. JANGAN tulis apa pun ke Log Peristiwa — timer 20 dtk yang
   // menyala terus (App.tsx) akan memenuhi ring-buffer 100 baris dengan baris "mulai kirim batch"
   // kosong dan menggusur baris diagnostik yang berguna. Cek murah dulu sebelum log.
   const pending = await getQueueBatch(1);
-  if (pending.length === 0) return;
+  if (pending.length === 0) return 'noop';
   diag(`flush: sesi OK, mulai kirim batch`);
 
   // Loop alih-alih rekursi: antrean offline yang menumpuk lama bisa berisi ratusan track,
@@ -92,7 +116,7 @@ async function flushQueueOnce(sourcePackage?: string) {
   // Loop menjaga penggunaan stack tetap datar berapa pun panjang antrean.
   while (true) {
     const fullBatch = await getQueueBatch(MAX_SCROBBLE_BATCH);
-    if (fullBatch.length === 0) return;
+    if (fullBatch.length === 0) return 'ok';
 
     // Pisahkan baris beracun (lewat batas percobaan) dari yang masih layak — logika murni,
     // diuji di scrobbleBatching.test.ts. Yang beracun dibuang supaya tak menyumbat slot batch.
@@ -108,7 +132,7 @@ async function flushQueueOnce(sourcePackage?: string) {
       // Semua yang tersisa di batch ini exhausted & sudah dibuang. Cek apakah masih ada baris
       // lain di antrean (yang belum exhausted) sebelum menyimpulkan antrean kosong.
       const stillRemaining = await getQueueBatch(1);
-      if (stillRemaining.length === 0) return;
+      if (stillRemaining.length === 0) return 'ok';
       continue;
     }
 
@@ -195,7 +219,7 @@ async function flushQueueOnce(sourcePackage?: string) {
           'Ditunda: batas scrobble harian Last.fm (kode 5)'
         );
         diag(`Ditahan untuk coba-ulang: ${retryRows.length} track (batas harian Last.fm) — flush dihentikan`);
-        return;
+        return 'rate_limited';
       }
       // Lanjut ke iterasi berikutnya untuk memproses sisa antrean (kalau ada).
     } catch (e) {
@@ -208,7 +232,7 @@ async function flushQueueOnce(sourcePackage?: string) {
         (e as Error).message
       );
       console.warn('Gagal mengirim scrobble, tetap di antrean untuk dicoba lagi:', e);
-      return;
+      return 'error';
     }
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partitionByAttempts, MAX_SCROBBLE_BATCH, parseScrobbleResponse } from '../scrobbleLogic';
+import { partitionByAttempts, MAX_SCROBBLE_BATCH, parseScrobbleResponse, isScrobbableMetadata } from '../scrobbleLogic';
 
 // Bentuk respons Last.fm: `scrobbles.scrobble` = objek saat 1 track, array saat banyak.
 const resp = (codes: (string | number)[]) => ({
@@ -85,5 +85,32 @@ describe('parseScrobbleResponse — kode transien vs permanen', () => {
     expect(accepted).toBe(2);
     expect(ignoredIndexes.size).toBe(0);
     expect(retryableIndexes.size).toBe(0);
+  });
+});
+
+describe('isScrobbableMetadata', () => {
+  it('artist & judul wajar -> true', () => {
+    expect(isScrobbableMetadata('Kirana Seo', 'Garis Batas')).toBe(true);
+  });
+  it('artist kosong -> false', () => {
+    expect(isScrobbableMetadata('', 'Garis Batas')).toBe(false);
+    expect(isScrobbableMetadata('   ', 'Garis Batas')).toBe(false);
+  });
+  it('artist placeholder tak dikenal -> false', () => {
+    expect(isScrobbableMetadata('Tidak dikenal', 'Lagu')).toBe(false);
+    expect(isScrobbableMetadata('Unknown', 'Lagu')).toBe(false);
+    expect(isScrobbableMetadata('<unknown>', 'Lagu')).toBe(false);
+  });
+  it('judul kosong -> false', () => {
+    expect(isScrobbableMetadata('Artist', '')).toBe(false);
+  });
+  it('judul mirip content-URI / document-id -> false', () => {
+    expect(isScrobbableMetadata('Artist', 'audio%3A1000343174')).toBe(false);
+    expect(isScrobbableMetadata('Artist', 'audio:1000343174')).toBe(false);
+    expect(isScrobbableMetadata('Artist', 'content://media/external/audio/123')).toBe(false);
+    expect(isScrobbableMetadata('Artist', 'file:///storage/x.mp3')).toBe(false);
+  });
+  it('judul sah dengan titik dua biasa TETAP true (bukan URI)', () => {
+    expect(isScrobbableMetadata('Artist', 'Shooting Star: Reprise')).toBe(true);
   });
 });

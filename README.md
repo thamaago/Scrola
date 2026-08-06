@@ -28,6 +28,12 @@ dengan riwayat scrobble bergaya "tiket cerita".
 > - [`docs/POSITIONING.md`](./docs/POSITIONING.md) — positioning pasar Indonesia (untuk siapa &
 >   kenapa, wedge lokal, perbandingan jujur vs Pano Scrobbler). Rujukan saat menulis deskripsi
 >   Play Store / materi rilis.
+> - [`docs/REFERENSI_SCROBBLE_PANO.md`](./docs/REFERENSI_SCROBBLE_PANO.md) — pembelajaran mekanisme
+>   submit scrobble dari Pano Scrobbler (GPL-3.0): pemetaan sudah/adopsi/tak-berlaku + rekomendasi
+>   berprioritas (backoff, cabang error top-level, jeda antar batch).
+> - [`docs/REFERENSI_TAG_EDITOR.md`](./docs/REFERENSI_TAG_EDITOR.md) — pembelajaran editor tag MP3 dari
+>   app sejenis (mp3agic/jaudiotagger/TagLib): fokus korektnes (encoding Unicode, album art, tulis
+>   aman) ketimbang menambah fitur.
 > - [`docs/GITHUB_SETUP.md`](./docs/GITHUB_SETUP.md) — checklist langkah manual di GitHub UI
 >   (secrets, branch protection, rilis pertama) yang tidak bisa diotomasi dari scaffold ini.
 > - [`docs/PANDUAN_API_KEY.md`](./docs/PANDUAN_API_KEY.md) — **panduan langkah-demi-langkah

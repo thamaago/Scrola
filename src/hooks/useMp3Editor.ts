@@ -47,6 +47,30 @@ export function useMp3Editor() {
     }
   }, []);
 
+  // Muat metadata dari URI yang sudah dimiliki (mis. lagu yang sedang diputar) — tanpa picker.
+  const loadUri = useCallback(async (uri: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const meta = await Mp3MetadataNative.readMetadata({ uri });
+      setCurrent(meta);
+      setFields({
+        title: meta.title,
+        artist: meta.artist,
+        album: meta.album,
+        albumArtist: meta.albumArtist,
+        year: meta.year,
+        genre: meta.genre,
+      });
+      setNewAlbumArt(undefined);
+    } catch (e) {
+      setError('Gagal membaca metadata lagu ini. File mungkin bukan MP3 atau tak bisa diakses.');
+      console.warn('readMetadata gagal:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const updateField = useCallback((key: keyof EditableFields, value: string) => {
     setFields((prev) => (prev ? { ...prev, [key]: value } : prev));
   }, []);
@@ -103,6 +127,7 @@ export function useMp3Editor() {
     saving,
     error,
     pickFile,
+    loadUri,
     updateField,
     removeAlbumArt,
     setAlbumArtDataUri,

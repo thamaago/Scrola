@@ -134,13 +134,15 @@ Fokus: melengkapi interaksi riwayat, memakai infrastruktur yang sudah ada.
 
 ### v0.3.0 — "Perjalanan dengarmu" (rencana)
 Fokus: memperdalam Sisi B & data milik pengguna.
-- **Bagikan Sisi B sebagai gambar tiket** (tombolnya sudah ada bertanda "segera") — render
-  rekap ke canvas → simpan/bagikan; nilai viral organik tanpa server apa pun.
-- **Statistik periode lain** (bulanan "Bab", tahunan "Album") — `computeSisiBStats` sudah
-  parametrik terhadap rentang; tinggal UI pemilih periode.
-- **Ekspor CSV/JSON** riwayat dari SQLite (kolom `albumArtist` sudah ikut ter-SELECT sejak
-  audit gelombang 6 — datanya siap).
-- **Kurasi "Penemuan"**: daftar artis baru minggu ini sebagai layar sendiri, bukan cuma angka.
+- ✅ **Bagikan Sisi B sebagai gambar tiket** — SELESAI (`renderSisiBZine` + tombol share; belum
+  divalidasi device).
+- ✅ **Statistik periode lain** (bulanan "Bab", tahunan "Album") — SELESAI (`BabAlbumScreen`).
+- **Ekspor CSV/JSON** riwayat dari SQLite — ✅ **JSON SELESAI** (lewat fitur Cadangan Data:
+  `backupService` + `shareFile`); **CSV masih terbuka** (kolom `albumArtist` sudah ter-SELECT).
+- ✅ **Kurasi "Penemuan"** — SELESAI (`PenemuanScreen` + `discoveryLogic`; belum divalidasi device).
+
+**Sisa v0.3.0:** ekspor CSV (opsional). Sebelum menandai v0.3.0 tuntas: **validasi device** semua
+di atas (lihat `docs/VALIDASI_DEVICE.md`).
 
 ### v0.4.0 — "Panggung yang lebih luas" (ide, perlu validasi minat pengguna)
 - **Scrobble manual** (cari & catat lagu yang didengar offline/di radio) — `scrobbleBatch`

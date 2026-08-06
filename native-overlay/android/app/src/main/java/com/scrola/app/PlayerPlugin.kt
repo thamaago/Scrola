@@ -136,11 +136,21 @@ class PlayerPlugin : Plugin() {
                 return
             }
             // Simpan izin akses jangka panjang agar tidak perlu pilih ulang tiap buka app.
-            // Bisa throw SecurityException di beberapa document provider non-standar — dibungkus
-            // try/catch di luar supaya tidak meng-crash app / membuat Promise JS menggantung.
-            context.contentResolver.takePersistableUriPermission(
-                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            // Ambil READ + (bila bisa) WRITE, supaya file yang diputar bisa LANGSUNG diedit tag-nya
+            // & disimpan lewat "edit tag lagu ini" tanpa memilih ulang. Write dibungkus terpisah:
+            // beberapa provider hanya memberi READ — dalam kasus itu edit tetap bisa dibaca, hanya
+            // penyimpanan yang akan gagal jelas dengan pesannya sendiri.
+            // Dibungkus try/catch di luar supaya SecurityException tak meng-crash / menggantungkan Promise.
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (_: Exception) {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
 
             val metadata = extractMetadataFromUri(uri.toString())
 

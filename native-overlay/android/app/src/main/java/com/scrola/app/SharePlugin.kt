@@ -36,6 +36,17 @@ class SharePlugin : Plugin() {
 
     private val shareDirName = "shared_images"
 
+    /**
+     * Ambil hanya basename yang aman dari nama file agar tak pernah keluar dari cacheDir
+     * (defense-in-depth terhadap path traversal, mis. "../../databases/foo"). Buang pemisah path,
+     * batasi ke karakter aman; kalau kosong pakai fallback.
+     */
+    private fun sanitizeFilename(name: String, fallback: String): String {
+        val base = name.substringAfterLast('/').substringAfterLast('\\')
+        val cleaned = base.replace(Regex("[^A-Za-z0-9._-]"), "_").trimStart('.')
+        return if (cleaned.isBlank()) fallback else cleaned
+    }
+
     override fun load() {
         super.load()
         // Bersihkan sisa gambar dari sesi sebelumnya (mis. app ditutup paksa setelah share).
@@ -58,7 +69,7 @@ class SharePlugin : Plugin() {
             call.reject("Parameter 'base64' wajib diisi")
             return
         }
-        val filename = call.getString("filename") ?: "scrola-tiket.png"
+        val filename = sanitizeFilename(call.getString("filename") ?: "scrola-tiket.png", "scrola-tiket.png")
         val title = call.getString("title") ?: "Bagikan tiket"
 
         var file: File? = null
@@ -130,7 +141,7 @@ class SharePlugin : Plugin() {
             call.reject("Parameter 'content' wajib diisi")
             return
         }
-        val filename = call.getString("filename") ?: "scrola-backup.json"
+        val filename = sanitizeFilename(call.getString("filename") ?: "scrola-backup.json", "scrola-backup.json")
         val mimeType = call.getString("mimeType") ?: "application/json"
         val title = call.getString("title") ?: "Bagikan file"
 

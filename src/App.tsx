@@ -6,6 +6,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import SisiBScreen from './screens/SisiBScreen';
 import TiketKoleksiScreen from './screens/TiketKoleksiScreen';
 import BabAlbumScreen from './screens/BabAlbumScreen';
+import PenemuanScreen from './screens/PenemuanScreen';
 import { loadSession } from './lib/secureStore';
 import { useNowPlayingListener, drainAndFlushNative } from './hooks/useNowPlaying';
 import { App as CapApp } from '@capacitor/app';
@@ -27,6 +28,7 @@ export default function App() {
   const [sisiBOpen, setSisiBOpen] = useState(false);
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [babAlbumOpen, setBabAlbumOpen] = useState(false);
+  const [penemuanOpen, setPenemuanOpen] = useState(false);
   // id entri riwayat yang BARU tercatat — untuk border amber + animasi masuk di HistoryScreen.
   const [freshScrobbleId, setFreshScrobbleId] = useState<number | null>(null);
   const prevTopIdRef = useRef<number | null>(null);
@@ -52,13 +54,23 @@ export default function App() {
 
   // Sinkronisasi scrobble: serap yang ditangkap NATIVE di latar (Opsi 2), kirim sisa antrean,
   // lalu muat ulang riwayat. Native menangkap lagu walau app tertutup; JS mengirimnya saat aktif.
+  const syncingRef = useRef(false);
   const syncScrobbles = useCallback(async () => {
+    // Cegah tumpang-tindih dengan diri sendiri. syncScrobbles dipicu dari beberapa tempat (buka app,
+    // kembali foreground, timer 20 dtk) yang bisa berdekatan. Tanpa guard ini, sync #2 bisa memanggil
+    // flushQueue SELAGI drain #1 masih meng-enqueue → flush menyela di tengah drain → batch terpecah
+    // (mis. "KIRIM 2" lalu "KIRIM 3") dan track dikirim ulang. drain+flush harus satu unit atomik.
+    // (drainAll native sendiri sudah atomik, jadi ini murni soal menjaga batch tetap utuh.)
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     try {
       await drainAndFlushNative();
       await flushQueue();
       await reloadHistory();
     } catch (e) {
       console.warn('Sinkronisasi scrobble gagal:', e);
+    } finally {
+      syncingRef.current = false;
     }
   }, [reloadHistory]);
 
@@ -169,10 +181,14 @@ export default function App() {
         open={sisiBOpen}
         onClose={() => setSisiBOpen(false)}
         onOpenBabAlbum={() => setBabAlbumOpen(true)}
+        onOpenPenemuan={() => setPenemuanOpen(true)}
       />
 
       {/* Overlay Bab (bulan) & Album (tahun) */}
       <BabAlbumScreen open={babAlbumOpen} onClose={() => setBabAlbumOpen(false)} />
+
+      {/* Overlay Penemuan — linimasa artis yang ditemukan */}
+      <PenemuanScreen open={penemuanOpen} onClose={() => setPenemuanOpen(false)} />
 
       {/* Overlay Koleksi Tiket */}
       <TiketKoleksiScreen open={ticketsOpen} onClose={() => setTicketsOpen(false)} />

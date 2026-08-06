@@ -6,7 +6,7 @@ import { Diagnostics } from '../lib/diagnostics';
 import { getExternalScrobbleEnabled, setExternalScrobbleEnabled } from '../lib/preferences';
 import { getAccountStats, getQueueStatus } from '../lib/db/queries';
 import { flushQueue } from '../lib/scrobbleEngine';
-import { sourceLabel } from '../lib/sourceLabels';
+import { sourceLabel, isLikelyMusicSource } from '../lib/sourceLabels';
 import { buildBackupJson, restoreFromJson, type RestoreSummary } from '../lib/backupService';
 import { SharePlugin } from '../lib/share';
 
@@ -359,23 +359,29 @@ export default function SettingsScreen({
                 </p>
               )}
 
-              {listenerDiag.detectedPackages && listenerDiag.detectedPackages.length > 0 && (
-                <div className="mt-3">
-                  <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase mb-1.5">
-                    Sumber terdeteksi ({listenerDiag.detectedPackages.length})
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {listenerDiag.detectedPackages.map((pkg) => (
-                      <span
-                        key={pkg}
-                        className="font-mono text-[11px] text-amber bg-amber/10 border border-amber/25 rounded-full px-2.5 py-1"
-                      >
-                        {sourceLabel(pkg)}
-                      </span>
-                    ))}
+              {(() => {
+                // Saring paket non-musik jelas (keyboard/launcher/systemui) dari daftar tampil —
+                // mis. com.samsung.android.honeyboard yang punya MediaSession tapi bukan pemutar.
+                const musicSources = (listenerDiag.detectedPackages ?? []).filter(isLikelyMusicSource);
+                if (musicSources.length === 0) return null;
+                return (
+                  <div className="mt-3">
+                    <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase mb-1.5">
+                      Sumber terdeteksi ({musicSources.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {musicSources.map((pkg) => (
+                        <span
+                          key={pkg}
+                          className="font-mono text-[11px] text-amber bg-amber/10 border border-amber/25 rounded-full px-2.5 py-1"
+                        >
+                          {sourceLabel(pkg)}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Saran perbaikan SPESIFIK untuk lapis pertama yang gagal */}
               {!listenerDiag.granted && (

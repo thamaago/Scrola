@@ -3,7 +3,7 @@ import StoryTicket from '../components/StoryTicket';
 import EditMetadataScreen from './EditMetadataScreen';
 import SeekTimeline from '../components/SeekTimeline';
 import { usePlayer } from '../hooks/usePlayer';
-import { scrobbleThresholdSec } from '../lib/scrobbleLogic';
+import { scrobbleThresholdSec, isScrobbableMetadata } from '../lib/scrobbleLogic';
 import { observedProgress } from '../lib/playbackTimer';
 import NoteEditor from '../components/NoteEditor';
 import { hasNote, normalizeNoteForSave } from '../lib/noteLogic';
@@ -111,10 +111,14 @@ export default function NowPlayingScreen({
   const isPlaying = player.state?.isPlaying ?? false;
   const thresholdSec = durationSec > 30 ? scrobbleThresholdSec(durationSec) : 0;
   const eligible = thresholdSec > 0 && positionSec >= thresholdSec;
+  // File lokal tanpa tag ID3 jatuh ke metadata sampah (judul = content-URI, artist "Tidak dikenal").
+  // Itu TIDAK di-scrobble (guard di enqueueScrobbleNoFlush) — jadi jangan tampilkan hitung mundur
+  // "scrobble pada X" atau toast "tercatat" yang menyesatkan; arahkan pengguna mengedit tag dulu.
+  const willScrobble = player.track ? isScrobbableMetadata(player.track.artist, player.track.title) : false;
 
   // Picu animasi sobek + toast SEKALI saat ambang scrobble tercapai.
   useEffect(() => {
-    if (!eligible || scrobbled || !player.track) return;
+    if (!eligible || scrobbled || !player.track || !willScrobble) return;
     setScrobbled(true);
     setTearing(true);
     setToast(true);
@@ -372,8 +376,10 @@ export default function NowPlayingScreen({
         <span className="font-mono text-[11px] text-muted">
           tercetak {Math.round(printProgress * 100)}%
         </span>
-        <span className="font-mono text-[11px] text-amber">
-          {scrobbled
+        <span className={`font-mono text-[11px] ${willScrobble ? 'text-amber' : 'text-muted'}`}>
+          {!willScrobble
+            ? 'metadata belum jelas — edit tag dulu'
+            : scrobbled
             ? 'tersimpan di Riwayat'
             : thresholdSec > 0
             ? `scrobble pada ${formatSec(Math.ceil(thresholdSec))}`
@@ -448,6 +454,7 @@ export default function NowPlayingScreen({
       {showEditor && (
         <EditMetadataScreen
           onClose={() => setShowEditor(false)}
+          initialUri={player.track?.uri?.startsWith('content://') ? player.track.uri : undefined}
           onSaved={(result) => {
             if (player.track) player.updateTrackMetadata(player.track.uri, result);
           }}

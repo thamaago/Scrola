@@ -23,10 +23,12 @@ export default function SisiBScreen({
   open,
   onClose,
   onOpenBabAlbum,
+  onOpenPenemuan,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenBabAlbum?: () => void;
+  onOpenPenemuan?: () => void;
 }) {
   const [stats, setStats] = useState<SisiBStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -214,15 +216,30 @@ export default function SisiBScreen({
                   </p>
                   <p className="text-xs text-muted mt-0.5">paling sering mendengar</p>
                 </div>
-                <div className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4">
-                  <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-                    Penemuan
-                  </p>
-                  <p className="font-display text-xl font-semibold text-paper mt-1">
-                    {stats.newArtistCount} artis
-                  </p>
-                  <p className="text-xs text-muted mt-0.5">baru pertama tercatat</p>
-                </div>
+                {onOpenPenemuan ? (
+                  <button
+                    onClick={onOpenPenemuan}
+                    className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4 text-left active:scale-[0.99] transition-transform"
+                  >
+                    <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
+                      Penemuan
+                    </p>
+                    <p className="font-display text-xl font-semibold text-paper mt-1">
+                      {stats.newArtistCount} artis
+                    </p>
+                    <p className="text-xs text-amber mt-0.5">baru pekan ini · lihat semua →</p>
+                  </button>
+                ) : (
+                  <div className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4">
+                    <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
+                      Penemuan
+                    </p>
+                    <p className="font-display text-xl font-semibold text-paper mt-1">
+                      {stats.newArtistCount} artis
+                    </p>
+                    <p className="text-xs text-muted mt-0.5">baru pertama tercatat</p>
+                  </div>
+                )}
               </div>
 
               {/* Irama minggu — 7 bar, hari tersibuk disorot */}

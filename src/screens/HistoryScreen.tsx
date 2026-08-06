@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import StoryTicket from '../components/StoryTicket';
 import NoteEditor from '../components/NoteEditor';
 import { hasNote, normalizeNoteForSave } from '../lib/noteLogic';
 import { setHistoryNote } from '../lib/db/queries';
 import type { HistoryEntry } from '../hooks/useScrobbleHistory';
-import { groupHistoryByDay } from '../lib/historyGrouping';
+import { groupHistoryByDay, groupHistoryByPeriod, filterHistoryWithNotes, recentHistory } from '../lib/historyGrouping';
+import { getAllHistory } from '../lib/db/queries';
+import type { HistoryRow } from '../lib/db/queries';
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const BULAN = [
@@ -47,9 +49,38 @@ export default function HistoryScreen({
   function closeSheet() {
     setSelected(null);
   }
-  // Pengelompokan dilakukan lewat fungsi murni yang bisa diunit-test (lihat historyGrouping.ts),
-  // bukan di dalam komponen — supaya logic tanggal (hari ini/kemarin) terverifikasi terpisah.
-  const groups = useMemo(() => groupHistoryByDay(items), [items]);
+  // Mode tampilan Riwayat. 'recent' = default, hanya 10 terakhir. Mode lain menampilkan UTUH.
+  const [viewMode, setViewMode] = useState<'recent' | 'day' | 'week' | 'month' | 'notes'>('recent');
+  const [allItems, setAllItems] = useState<HistoryRow[] | null>(null);
+
+  // Muat riwayat UTUH hanya saat mode selain 'recent' aktif (lazy). Reload juga saat ada scrobble
+  // baru (items berubah) agar mode utuh tetap segar.
+  useEffect(() => {
+    if (viewMode === 'recent') return;
+    let cancelled = false;
+    getAllHistory()
+      .then((all) => {
+        if (!cancelled) setAllItems(all);
+      })
+      .catch((e) => {
+        console.warn('Gagal memuat riwayat utuh:', e);
+        if (!cancelled) setAllItems([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, items]);
+
+  // Pengelompokan lewat fungsi murni teruji (historyGrouping.ts). 'recent' dibatasi 10; mode lain utuh.
+  const groups = useMemo(() => {
+    if (viewMode === 'recent') return groupHistoryByDay(recentHistory(items, 10));
+    const source = allItems ?? [];
+    if (viewMode === 'notes') return groupHistoryByDay(filterHistoryWithNotes(source));
+    if (viewMode === 'day') return groupHistoryByDay(source);
+    return groupHistoryByPeriod(source, viewMode);
+  }, [viewMode, items, allItems]);
+
+  const loadingFull = viewMode !== 'recent' && allItems === null;
 
   const now = new Date();
   const babLabel = `Bab ${ROMAN[now.getMonth()]} · ${BULAN[now.getMonth()]}`;
@@ -81,11 +112,46 @@ export default function HistoryScreen({
         </div>
       </div>
 
-      {items.length === 0 ? (
+      {/* Pemilih tampilan: Terbaru (10) vs periode utuh vs bercatatan. */}
+      <div className="flex gap-1.5 mx-2 mb-4 overflow-x-auto no-scrollbar">
+        {([
+          ['recent', 'Terbaru'],
+          ['day', 'Per hari'],
+          ['week', 'Per minggu'],
+          ['month', 'Per bulan'],
+          ['notes', 'Bercatatan'],
+        ] as const).map(([m, label]) => (
+          <button
+            key={m}
+            onClick={() => setViewMode(m)}
+            className={`font-mono text-[11px] tracking-[0.05em] rounded-full py-1.5 px-3 whitespace-nowrap transition-colors ${
+              viewMode === m
+                ? 'bg-amber/20 border border-amber/40 text-amber'
+                : 'bg-surface border border-white/10 text-muted'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {viewMode === 'recent' && items.length > 10 && (
+        <p className="font-mono text-[10px] text-muted mx-2 mb-3">
+          Menampilkan 10 terakhir — pilih Per hari/minggu/bulan untuk riwayat utuh.
+        </p>
+      )}
+
+      {loadingFull ? (
+        <p className="text-muted text-sm text-center pt-16">Memuat riwayat utuh…</p>
+      ) : groups.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center px-4 pt-24">
-          <p className="font-display text-2xl text-paper mb-2">Buku ceritamu masih kosong</p>
+          <p className="font-display text-2xl text-paper mb-2">
+            {viewMode === 'notes' ? 'Belum ada catatan' : 'Buku ceritamu masih kosong'}
+          </p>
           <p className="text-muted text-sm max-w-xs">
-            Setiap lagu yang selesai kamu dengarkan akan muncul di sini sebagai tiket.
+            {viewMode === 'notes'
+              ? 'Tulis catatan pada sebuah lagu, dan ia akan muncul di sini.'
+              : 'Setiap lagu yang selesai kamu dengarkan akan muncul di sini sebagai tiket.'}
           </p>
         </div>
       ) : (

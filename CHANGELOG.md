@@ -17,6 +17,130 @@ tooling).
 
 ## [Unreleased]
 
+### Added — mode tampilan Riwayat (Terbaru / periode / bercatatan)
+- Riwayat kini punya pemilih mode: **Terbaru** (default, hanya **10 lagu terakhir**), **Per hari**,
+  **Per minggu**, **Per bulan** (ketiganya menampilkan riwayat **UTUH** dikelompokkan per periode), dan
+  **Bercatatan** (hanya lagu yang punya catatan). Sesuai permintaan: default ringkas, periode = lengkap.
+- Pure-logic + TDD (**6 test baru**, total **226**): `groupHistoryByPeriod` (day/week/month — label
+  "Minggu ini"/"Minggu lalu"/rentang & "Bulan ini"/"Bulan lalu"/"Nama Tahun", memakai ulang
+  `startOfIsoWeek` & `weekRangeLabel` yang sudah ada), `filterHistoryWithNotes`, `recentHistory`. Semua
+  menghasilkan bentuk grup identik dengan `groupHistoryByDay` → rendering Riwayat tak berubah.
+- Data: `getAllHistory()` (query utuh) dimuat **lazy** hanya saat mode non-Terbaru dipilih; mode
+  Terbaru tetap ringan (10 dari prop yang sudah dimuat). Ada state loading & empty-state khusus
+  ("Belum ada catatan" untuk mode Bercatatan).
+- Murni logika + React (tanpa native baru). `tsc` 0 error, brace seimbang. **Belum tervalidasi
+  device** — perlu cek tampilan pemilih & pengelompokan periode di SM-X706B.
+Dari feedback device (file lokal tanpa tag ID3 tampil sebagai `audio%3A...` / "Tidak dikenal" tapi
+tetap menghitung mundur untuk scrobble):
+
+- **A. Metadata sampah tak di-scrobble.** `isScrobbableMetadata(artist, track)` (murni, TDD, **6 test
+  baru**, total **220**) menolak artist kosong/placeholder ("Tidak dikenal"/"Unknown") dan judul yang
+  sebenarnya content-URI/document-id (`audio%3A…`, `content://…`). Di-guard di `enqueueScrobbleNoFlush`
+  (chokepoint SEMUA jalur scrobble) — file tanpa metadata jelas TIDAK mengotori profil Last.fm sampai
+  jelas (mis. setelah tag diedit). `NowPlayingScreen` kini menampilkan "metadata belum jelas — edit tag
+  dulu" alih-alih hitung mundur menyesatkan, dan tak memunculkan toast "tercatat".
+- **B. Edit tag lagu yang sedang diputar → langsung ke editornya.** Dulu tombol edit membuka picker
+  kosong (user harus cari ulang MP3). Sekarang: metode native baru `Mp3Metadata.readMetadata(uri)`
+  (baca tag dari URI tanpa picker) + `useMp3Editor.loadUri` + `EditMetadataScreen initialUri` +
+  `NowPlayingScreen` meneruskan URI file yang diputar (hanya `content://` lokal). Agar bisa **disimpan**,
+  file-pick `PlayerPlugin` kini mengambil izin **READ|WRITE** persisten (fallback READ bila provider tak
+  memberi write) — selaras dengan editor yang memang menulis ulang file.
+- Validasi di sini: tsc 0 error, 220 test, brace `.ts/.tsx/.kt` seimbang. **Task B belum tervalidasi
+  device** & bergantung perilaku SAF: (1) URI pemutar dapat dibaca editor, (2) izin WRITE benar-benar
+  diberikan provider sehingga SIMPAN berhasil. Wajib diuji: putar file lokal → tap edit (✎) → editor
+  terbuka dengan file itu → ubah → simpan → berhasil.
+- Dari screenshot device: `com.samsung.android.honeyboard` (keyboard Samsung) muncul sebagai "sumber"
+  karena punya MediaSession, padahal tak pernah melaporkan judul/artis (tak mungkin ter-scrobble) —
+  cosmetic/berpotensi membingungkan. `isLikelyMusicSource` (murni, TDD, **5 test baru**, total **214**)
+  menyaring keyboard/IME/launcher/systemui dari daftar tampil, mempertahankan app musik dikenal DAN
+  paket tak dikenal lain (sesuai filosofi sourceLabels: perlihatkan yang tak dikenal untuk identifikasi).
+- **Validasi device (screenshot 02.46):** UI ketiga tab render mulus; H4/H5/H6 lolos (deteksi, log,
+  antrean jujur "kosong"); A3 sebagian (jam Riwayat berurutan & wajar, tak menumpuk); UI Cadangan Data
+  & Backstage Pass tampil benar; teks CJK render benar di Riwayat. Ditandai di `docs/VALIDASI_DEVICE.md`.
+  Dikonfirmasi bukan-bug: "Sh**ting Stars" = metadata sumber (Scrola tak menyensor teks).
+
+### Fixed / Security — audit menyeluruh 5 putaran
+- **Putaran 1 (build/tipe):** memperbaiki **2 error `tsc` pra-ada** (`Intl.Segmenter` tak dikenal
+  di `lib` tsconfig) dengan menambah `ES2022.Intl` — kode-nya sendiri sudah dijaga runtime + fallback.
+  **`tsc` kini 0 error** (dulu 2). Brace `.ts/.tsx/.kt` semua seimbang; tak ada TODO/FIXME tertinggal.
+- **Putaran 2 (logika/async):** tak ada `==` longgar (hanya idiom `== null` & komentar), tak ada
+  floating promise, tak ada `console.log` sisa. Integrasi backoff (outcome terminal, state ditulis
+  hanya dalam guard `isFlushing`) & urutan restore (id lokal tak ter-invalidasi insert) ditelaah — bersih.
+- **Putaran 3 (keamanan):** semua query DB **parameterized** (tak ada interpolasi SQL); secret Last.fm
+  dari `import.meta.env` (`.env*` di-gitignore, ada placeholder-guard); izin manifest minimal (editor
+  MP3 via SAF, tanpa izin storage); tak ada `dangerouslySetInnerHTML`/`eval`. **Fixed (hardening):**
+  `SharePlugin.shareFile/shareImage` kini menyanitasi `filename` ke basename aman (defense-in-depth
+  anti path-traversal; sebelumnya tak tereksploitasi karena filename selalu dari kode kita).
+- **Putaran 4 (konkurensi/lifecycle):** semua guard (`isFlushing`/`syncingRef`/`sharingRef`) reset di
+  `finally`; `setInterval` di-clear; listener React & native dilepas di cleanup. Tak ada leak baru.
+- **Putaran 5 (integritas data):** restore backup **terbukti non-destruktif** (nol delete/clear/
+  overwrite di jalurnya); tak ada `catch` kosong penelan-error atau `as any` di modul baru.
+- **Batas jujur:** ini audit **statis** (tipe, pola, telaah logika, grep keamanan) — mempersempit
+  ruang bug, TAPI tidak menggantikan validasi device. "Bebas bug" penuh tetap butuh uji di SM-X706B
+  (lihat `docs/VALIDASI_DEVICE.md`). Verifikasi akhir: **tsc 0 error, 209 test lolos.**
+- Menutup item roadmap v0.3.0 yang tersisa: kurasi "Penemuan" sebagai layar tersendiri, bukan
+  sekadar angka. Mengubah stat "penemuan baru" di Sisi B jadi cerita yang bisa ditelusuri — tiap
+  artis yang pernah ditemukan, lagu yang mengenalkannya, kapan, dan berapa kali diputar.
+- `discoveryLogic.ts` (MURNI, TDD, **7 test baru**): `computeDiscoveries` — satu entri per artis
+  (dinormalkan case/spasi), memakai kemunculan PALING AWAL sebagai penemuan, diurut terbaru dulu,
+  mengabaikan artist kosong. Total **209 test lolos**.
+- `PenemuanScreen.tsx` — overlay (pola sama Bab/Album) yang mengomposisi `getAllHistoryForBackup`
+  (query yang sudah ada) dengan `computeDiscoveries`. Kartu stat "Penemuan" di Sisi B kini bisa
+  di-tap untuk membuka linimasa lengkap.
+- Murni logika + React (tanpa native baru). `tsc` bersih (rantai App→SisiB→Penemuan→query typecheck),
+  brace seimbang. **Belum tervalidasi device** — tampilan & navigasi perlu dicek di SM-X706B.
+- `docs/REFERENSI_TAG_EDITOR.md`: studi app editor tag ID3 open-source (spkdroid/Mp3-Tag-Editor yang
+  juga pakai **mp3agic** → memvalidasi pendekatan Scrola; Metadator yang pakai **TagLib** multi-format;
+  serta jaudiotagger). Memetakan baseline Scrola (mp3agic, SAF temp-file, pertahankan tag, downscale
+  art) vs yang layak diadopsi. **Prioritas #1: encoding Unicode** — plugin belum set encoding, ikut
+  default mp3agic; untuk app berbahasa Indonesia, teks non-Latin/CJK berisiko mojibake bila ditulis
+  ISO-8859-1 (wajib uji device + paksa UTF-16/UTF-8). Juga: picture-type album art, salin-balik lebih
+  aman. Sikap dijaga: TIDAK meniru kelengkapan Metadator (batch/lirik/multi-format) — editor Scrola
+  sengaja ramping sebagai pelengkap scrobbler. Catatan lisensi: Metadator AGPL-3.0 → pelajari pola,
+  jangan salin kode ke Scrola (GPL-3.0). Ditautkan dari README. Dokumen saja — 202 test tetap.
+- Implementasi rekomendasi #1 dari `docs/REFERENSI_SCROBBLE_PANO.md`. Sebelumnya flush di-retry pada
+  interval TETAP 20 dtk; saat Last.fm rate-limit (kode 5/29) atau jaringan down, Scrola menghantam
+  tiap 20 dtk dan — dikombinasi `MAX_ATTEMPTS=8` — bisa **membuang scrobble sah** dalam hitungan menit.
+- `backoffPolicy.ts` (MURNI, TDD, **8 test baru**): `backoffDelayMs` (eksponensial base 20s ×2^n,
+  batas 30 mnt), `canAttempt`, `nextBackoffState`. `flushQueue` kini: cek `canAttempt` sebelum flush
+  (lewati bila dalam jendela backoff); `flushQueueOnce` mengembalikan `FlushOutcome`
+  (`ok`/`noop`/`rate_limited`/`error`) → sukses reset backoff, gagal/rate-limit menaikkan jeda.
+- Drain native TIDAK terpengaruh (tetap memindah pending → antrean JS); hanya flush jaringan yang
+  di-gate. State backoff in-memory (reset saat app restart = percobaan segar). Timer 20 dtk tetap;
+  tick yang jatuh dalam jendela backoff dilewati.
+- Validasi: **202 test lolos**, `tsc` bersih, brace seimbang. Belum tervalidasi device — harap log
+  saat jaringan diputus menunjukkan jeda retry yang MEMBESAR (mis. `flush error → backoff ~40s`),
+  bukan spam tiap 20 dtk; dan setelah jaringan pulih, satu flush sukses lalu cadence normal kembali.
+- `docs/REFERENSI_SCROBBLE_PANO.md`: studi pola submit pending-scrobble Pano Scrobbler (GPL-3.0, dari
+  sumbernya — `PendingScrobblesWorker`, DAO, penjadwalan WorkManager) sebagai pembelajaran, bukan
+  salinan kode. Memvalidasi keputusan Scrola yang sudah ada (batch 50, serialisasi submit via
+  `syncingRef`/`isFlushing`, timeout jaringan, permanen-vs-transien kode 5, urutan terlama-dulu) dan
+  mengidentifikasi penghalusan berprioritas: **backoff + retry-after saat gagal** (mencegah scrobble
+  sah terbuang oleh MAX_ATTEMPTS saat rate-limit sementara), **cabang error top-level** (9 sesi vs 29
+  rate-limit), dan **jeda antar batch + HARD_LIMIT per flush**. Termasuk pelajaran dari bug-report Pano
+  (pending stuck #8/#562 → jaga guard/timeout; repeat pause-resume #570). Ditautkan dari README.
+  Dokumen saja — tak menyentuh kode; 194 test tetap.
+- Terdiagnosis dari log device 16:04: batch-drain 3 track latar terpecah jadi `KIRIM 2` lalu
+  `KIRIM 3` (2 track terkirim ulang) karena `syncScrobbles` (dipicu dari buka-app / kembali-foreground
+  / timer 20 dtk) bisa **tumpang-tindih dengan dirinya sendiri**: sync #2 memanggil `flushQueue`
+  selagi drain #1 masih meng-enqueue → flush menyela di tengah drain.
+- **Tidak ada kerusakan data** (dikonfirmasi dari kode): `drainAll` native atomik (`synchronized`,
+  baca+hapus) → tak ada double-drain; riwayat lokal benar; timestamp asli terjaga; Last.fm dedup
+  mencegah duplikat terlihat. Isunya efisiensi/keutuhan batch, bukan korupsi.
+- Fix: guard `syncingRef` di `App.tsx` menjadikan drain→flush→reload **satu unit atomik**; pemicu yang
+  datang saat sync berjalan dilewati (timer 20 dtk berikutnya menyusul). Batch-drain kembali utuh
+  (`KIRIM N` sekali). Guard React murni (pola sama dgn `sharingRef`) — divalidasi kode + tsc; 194 test
+  tetap lolos. Belum tervalidasi device: harap log berikutnya menunjukkan satu `KIRIM N` tanpa
+  `KIRIM` pecah saat drain backlog.
+- **Hasil uji device (08:12, log A2):** 56 track backlog lintas-pemutar (YouTube Music + Spotify)
+  ter-drain jadi **2 batch (15 + 41), 56/56 diterima, 56 baris ditulis** — batch-drain & tangkap
+  latar lintas-pemutar TERVALIDASI. TAPI target "satu KIRIM N bersih" BELUM tercapai: masih ada flush
+  menyela di tengah drain. Sumbernya (dari kode) BUKAN tumpang-tindih `syncScrobbles` (itu sudah
+  ter-guard) melainkan jalur **real-time** `enqueueScrobble`→`flushQueue`: lagu yang sedang diputar
+  jadi layak scrobble di tengah drain. Dampaknya **kosmetik** di kasus ini (15+41 = 2 panggilan API,
+  sama dengan 50+6), walau untuk backlog lebih besar bisa menambah 1 panggilan. Sengaja **tidak
+  diperbaiki** dulu: menambah guard lagi ke jalur submit yang baru tervalidasi berisiko > manfaat.
+
 ### Added — backup/restore data (catatan & favorit) via file JSON
 - Catatan per-lagu adalah data buatan-pengguna yang tak tergantikan. Upgrade di tempat tidak
   menghapusnya, TAPI reinstall / ganti HP / "Clear data" / APK berkunci-beda menghapusnya — dan

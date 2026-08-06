@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { useMp3Editor, type EditableFields } from '../hooks/useMp3Editor';
 
@@ -26,11 +26,23 @@ const FIELD_LABELS: { key: keyof EditableFields; label: string; placeholder: str
 export default function EditMetadataScreen({
   onClose,
   onSaved,
+  initialUri,
 }: {
   onClose: () => void;
   onSaved?: (result: { uri: string; title: string; artist: string; albumArt: string | null }) => void;
+  initialUri?: string;
 }) {
   const editor = useMp3Editor();
+
+  // Kalau dibuka dari lagu yang sedang diputar (initialUri diberikan), langsung muat file itu —
+  // pengguna tak perlu memilih ulang MP3 yang sama. Hanya sekali saat mount.
+  const loadedInitialRef = useRef(false);
+  useEffect(() => {
+    if (initialUri && !loadedInitialRef.current) {
+      loadedInitialRef.current = true;
+      void editor.loadUri(initialUri);
+    }
+  }, [initialUri, editor]);
 
   // Tombol back hardware Android sebelumnya tidak menutup overlay ini sama sekali (default
   // Capacitor tanpa history WebView untuk di-back-kan biasanya malah keluar dari app) —

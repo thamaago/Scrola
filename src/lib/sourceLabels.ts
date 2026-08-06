@@ -42,3 +42,30 @@ const SOURCE_LABELS: Record<string, string> = {
 export function sourceLabel(packageName: string): string {
   return SOURCE_LABELS[packageName] ?? packageName;
 }
+
+/**
+ * Substring paket yang JELAS bukan pemutar musik — keyboard/IME, launcher, system UI. Beberapa di
+ * antaranya (mis. keyboard Samsung `honeyboard`) mendaftarkan MediaSession sehingga ikut "terdeteksi",
+ * padahal tak pernah melaporkan judul/artis (jadi tak mungkin ter-scrobble). Disaring HANYA dari
+ * daftar tampil "Sumber terdeteksi" agar tak membingungkan pengguna.
+ */
+const NON_MUSIC_SUBSTRINGS = [
+  'honeyboard',
+  'inputmethod',
+  'swiftkey',
+  'keyboard',
+  'gboard',
+  'launcher',
+  'systemui',
+];
+
+/**
+ * Apakah sebuah package layak dianggap sumber musik untuk DITAMPILKAN? App musik dikenal selalu ya.
+ * Selain itu: buang hanya yang cocok pola non-musik jelas; paket tak dikenal lain tetap ditampilkan
+ * (sesuai filosofi sourceLabels — memperlihatkan yang tak dikenal membantu identifikasi).
+ */
+export function isLikelyMusicSource(packageName: string): boolean {
+  if (packageName in SOURCE_LABELS) return true;
+  const p = packageName.toLowerCase();
+  return !NON_MUSIC_SUBSTRINGS.some((s) => p.includes(s));
+}

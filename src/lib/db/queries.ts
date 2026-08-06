@@ -166,6 +166,11 @@ export async function getHistory(limit = 100, offset = 0): Promise<HistoryRow[]>
   return ((res.values as any[]) ?? []).map((r) => ({ ...r, loved: !!r.loved }));
 }
 
+/** Seluruh riwayat (DESC) — untuk mode Riwayat perhari/perminggu/perbulan/catatan yang tampil utuh. */
+export async function getAllHistory(): Promise<HistoryRow[]> {
+  return getHistory(1_000_000, 0);
+}
+
 /**
  * Ambil SELURUH riwayat untuk backup (tanpa limit), dipetakan ke bentuk backupData: `loved`->
  * `favorite`, `duration`->`durationSec`. Diurut kronologis supaya file backup stabil/diff-able.
