@@ -4,7 +4,7 @@ import NoteEditor from '../components/NoteEditor';
 import { hasNote, normalizeNoteForSave } from '../lib/noteLogic';
 import { setHistoryNote } from '../lib/db/queries';
 import type { HistoryEntry } from '../hooks/useScrobbleHistory';
-import { groupHistoryByDay, groupHistoryByPeriod, filterHistoryWithNotes, recentHistory } from '../lib/historyGrouping';
+import { groupHistoryByDay, groupHistoryByPeriod, filterHistoryWithNotes, recentHistory, paginateHistory } from '../lib/historyGrouping';
 import { getAllHistory } from '../lib/db/queries';
 import type { HistoryRow } from '../lib/db/queries';
 
@@ -52,6 +52,7 @@ export default function HistoryScreen({
   // Mode tampilan Riwayat. 'recent' = default, hanya 10 terakhir. Mode lain menampilkan UTUH.
   const [viewMode, setViewMode] = useState<'recent' | 'day' | 'week' | 'month' | 'notes'>('recent');
   const [allItems, setAllItems] = useState<HistoryRow[] | null>(null);
+  const [page, setPage] = useState(0);
 
   // Muat riwayat UTUH hanya saat mode selain 'recent' aktif (lazy). Reload juga saat ada scrobble
   // baru (items berubah) agar mode utuh tetap segar.
@@ -71,16 +72,57 @@ export default function HistoryScreen({
     };
   }, [viewMode, items]);
 
-  // Pengelompokan lewat fungsi murni teruji (historyGrouping.ts). 'recent' dibatasi 10; mode lain utuh.
-  const groups = useMemo(() => {
-    if (viewMode === 'recent') return groupHistoryByDay(recentHistory(items, 10));
+  // Daftar rata untuk mode aktif (sebelum paging). 'recent' dibatasi 10; mode lain utuh.
+  const flatItems = useMemo(() => {
+    if (viewMode === 'recent') return recentHistory(items, 10);
     const source = allItems ?? [];
-    if (viewMode === 'notes') return groupHistoryByDay(filterHistoryWithNotes(source));
-    if (viewMode === 'day') return groupHistoryByDay(source);
-    return groupHistoryByPeriod(source, viewMode);
+    if (viewMode === 'notes') return filterHistoryWithNotes(source);
+    return source; // day / week / month
   }, [viewMode, items, allItems]);
 
+  // Paging 10/halaman. 'recent' selalu ≤10 → 1 halaman (bar tak muncul).
+  const pageData = useMemo(() => paginateHistory(flatItems, page, 10), [flatItems, page]);
+
+  // Kelompokkan hanya item di HALAMAN ini. Bentuk grup identik → rendering tak berubah.
+  const groups = useMemo(() => {
+    const its = pageData.pageItems;
+    if (viewMode === 'week' || viewMode === 'month') return groupHistoryByPeriod(its, viewMode);
+    return groupHistoryByDay(its); // recent / day / notes
+  }, [pageData, viewMode]);
+
+  // Reset ke halaman awal saat ganti mode (rentang halaman bisa beda).
+  useEffect(() => {
+    setPage(0);
+  }, [viewMode]);
+
   const loadingFull = viewMode !== 'recent' && allItems === null;
+
+  // Bar navigasi halaman (10/halaman). Muncul hanya bila ada >1 halaman. Dipakai di atas & bawah daftar.
+  const paginationBar =
+    !loadingFull && pageData.totalPages > 1 ? (
+      <div className="flex items-center justify-between mx-2 my-3">
+        <button
+          onClick={() => setPage((p) => Math.max(0, p - 1))}
+          disabled={pageData.page === 0}
+          className="font-mono text-[11px] rounded-full px-3 py-1.5 border border-white/10 text-paper disabled:opacity-30 active:scale-[0.98] transition-transform"
+        >
+          ‹ Sebelumnya
+        </button>
+        <span className="font-mono text-[10px] text-muted text-center leading-snug">
+          {pageData.page * 10 + 1}–{Math.min((pageData.page + 1) * 10, pageData.total)} dari{' '}
+          {pageData.total}
+          <br />
+          Hal {pageData.page + 1}/{pageData.totalPages}
+        </span>
+        <button
+          onClick={() => setPage((p) => Math.min(pageData.totalPages - 1, p + 1))}
+          disabled={pageData.page >= pageData.totalPages - 1}
+          className="font-mono text-[11px] rounded-full px-3 py-1.5 border border-white/10 text-paper disabled:opacity-30 active:scale-[0.98] transition-transform"
+        >
+          Berikutnya ›
+        </button>
+      </div>
+    ) : null;
 
   const now = new Date();
   const babLabel = `Bab ${ROMAN[now.getMonth()]} · ${BULAN[now.getMonth()]}`;
@@ -140,6 +182,8 @@ export default function HistoryScreen({
           Menampilkan 10 terakhir — pilih Per hari/minggu/bulan untuk riwayat utuh.
         </p>
       )}
+
+      {paginationBar}
 
       {loadingFull ? (
         <p className="text-muted text-sm text-center pt-16">Memuat riwayat utuh…</p>
@@ -206,6 +250,8 @@ export default function HistoryScreen({
           </div>
         ))
       )}
+
+      {paginationBar}
 
       {/* ===== Sheet aksi tiket (tap tiket untuk membuka) ===== */}
       {selected && (

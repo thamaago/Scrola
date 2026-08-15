@@ -113,3 +113,24 @@ export function filterHistoryWithNotes(items: HistoryRow[]): HistoryRow[] {
 export function recentHistory(items: HistoryRow[], max = 10): HistoryRow[] {
   return items.slice(0, max);
 }
+
+export interface HistoryPage {
+  pageItems: HistoryRow[];
+  page: number; // sudah di-clamp ke rentang valid [0, totalPages-1]
+  totalPages: number;
+  total: number;
+  pageSize: number;
+}
+
+/**
+ * Potong daftar riwayat jadi halaman berukuran `pageSize` (default 10). `page` yang di luar rentang
+ * di-clamp ke halaman valid terakhir (atau 0) — aman saat mode berganti / item berkurang. Daftar
+ * kosong tetap menghasilkan 1 halaman (tanpa item).
+ */
+export function paginateHistory(items: HistoryRow[], page: number, pageSize = 10): HistoryPage {
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const clamped = Math.min(Math.max(0, Math.trunc(page) || 0), totalPages - 1);
+  const start = clamped * pageSize;
+  return { pageItems: items.slice(start, start + pageSize), page: clamped, totalPages, total, pageSize };
+}

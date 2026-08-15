@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partitionByAttempts, MAX_SCROBBLE_BATCH, parseScrobbleResponse, isScrobbableMetadata } from '../scrobbleLogic';
+import { partitionByAttempts, MAX_SCROBBLE_BATCH, parseScrobbleResponse, isScrobbableMetadata, shouldScrobbleSource } from '../scrobbleLogic';
 
 // Bentuk respons Last.fm: `scrobbles.scrobble` = objek saat 1 track, array saat banyak.
 const resp = (codes: (string | number)[]) => ({
@@ -112,5 +112,24 @@ describe('isScrobbableMetadata', () => {
   });
   it('judul sah dengan titik dua biasa TETAP true (bukan URI)', () => {
     expect(isScrobbableMetadata('Artist', 'Shooting Star: Reprise')).toBe(true);
+  });
+});
+
+describe('shouldScrobbleSource', () => {
+  it('pemutar internal selalu boleh (bahkan kalau external mati)', () => {
+    expect(shouldScrobbleSource('com.scrola.app', false, [])).toBe(true);
+    expect(shouldScrobbleSource('com.scrola.app', true, ['com.scrola.app'])).toBe(true);
+  });
+  it('external mati -> sumber eksternal ditolak', () => {
+    expect(shouldScrobbleSource('com.spotify.music', false, [])).toBe(false);
+  });
+  it('external nyala + tak diabaikan -> boleh', () => {
+    expect(shouldScrobbleSource('com.spotify.music', true, ['com.google.android.youtube'])).toBe(true);
+  });
+  it('external nyala + diabaikan -> ditolak', () => {
+    expect(shouldScrobbleSource('com.google.android.youtube', true, ['com.google.android.youtube'])).toBe(false);
+  });
+  it('package undefined + external nyala -> boleh (tak bisa diabaikan)', () => {
+    expect(shouldScrobbleSource(undefined, true, [])).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { registerPlugin } from '@capacitor/core';
 import { notifyNowPlaying, enqueueScrobbleNoFlush, flushQueue } from '../lib/scrobbleEngine';
+import { shouldScrobbleSource } from '../lib/scrobbleLogic';
 import { diag } from '../lib/diagnostics';
 import {
   createTracker,
@@ -8,7 +9,7 @@ import {
   playedMsUntil,
   type PlaybackTracker,
 } from '../lib/playbackTimer';
-import { getExternalScrobbleEnabled } from '../lib/preferences';
+import { getExternalScrobbleEnabled, getIgnoredSources } from '../lib/preferences';
 import { cleanTrackMetadata } from '../lib/cleanTrackMetadata';
 import { applyCorrection } from '../lib/corrections';
 import { loadCorrections } from '../lib/correctionsStore';
@@ -66,11 +67,12 @@ export async function drainAndFlushNative(): Promise<number> {
   if (drained.length === 0) return 0;
 
   const externalAllowed = await getExternalScrobbleEnabled().catch(() => true);
+  const ignoredSources = await getIgnoredSources().catch(() => [] as string[]);
   const rules = await loadCorrections();
   let done = 0;
   for (const s of drained) {
-    const isInternal = s.sourcePackage === 'com.scrola.app';
-    if (!isInternal && !externalAllowed) continue; // hormati preferensi saat menyerap
+    // Hormati preferensi: master toggle + daftar sumber diabaikan (mis. app menonton video).
+    if (!shouldScrobbleSource(s.sourcePackage, externalAllowed, ignoredSources)) continue;
     try {
       // 1) Rapikan metadata (judul video YouTube -> artis/track wajar). Konservatif: Spotify dsb.
       //    tak disentuh. 2) Terapkan KOREKSI yang pernah kamu ajarkan lewat edit Riwayat.
@@ -191,14 +193,15 @@ export function useNowPlayingListener() {
       }));
 
       if (meta.artist && meta.title) {
-        // Hormati toggle "Scrobble dari app lain" JUGA untuk update now-playing — tanpa guard
-        // ini, user yang mematikan pencatatan dari app lain tetap "menyiarkan" apa yang sedang
-        // mereka putar di Spotify/YT Music ke profil Last.fm (track.updateNowPlaying). Toggle
-        // harus berarti senyap total untuk sumber eksternal, bukan cuma menahan scrobble-nya.
-        const isInternalSource = data.packageName === 'com.scrola.app';
-        (isInternalSource ? Promise.resolve(true) : getExternalScrobbleEnabled())
-          .then((allowed) => {
-            if (allowed) {
+        // Hormati preferensi JUGA untuk update now-playing — master toggle + daftar sumber
+        // diabaikan. Tanpa guard ini, sumber yang di-mute tetap "menyiarkan" apa yang diputar ke
+        // profil Last.fm (track.updateNowPlaying). Mute harus berarti senyap total untuk sumber itu.
+        Promise.all([
+          getExternalScrobbleEnabled().catch(() => true),
+          getIgnoredSources().catch(() => [] as string[]),
+        ])
+          .then(([allowed, ignored]) => {
+            if (shouldScrobbleSource(data.packageName, allowed, ignored)) {
               notifyNowPlaying({ artist: meta.artist, track: meta.title, album: meta.album, duration: meta.durationSec });
             }
           })

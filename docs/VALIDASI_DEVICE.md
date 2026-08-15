@@ -16,7 +16,10 @@ Bukti: centang bila lolos; simpan **screenshot layar** atau **Log Peristiwa** (P
 ## 🔴 A. Scrobble inti
 
 - [ ] **A1 · Real-time (Spotify)** — putar 1 lagu penuh di Spotify. → Muncul di Riwayat & profil Last.fm.
-- [ ] **A2 · Latar → batch utuh** — putar 3–6 lagu dgn app tertutup, lalu buka Scrola. → Log menunjukkan **satu** `scrobbleBatch KIRIM: N track` (N>1), **bukan** `KIRIM 1` berulang/terpecah. *(uji fix sync-overlap)*
+- [x] **A2 · Latar → batch utuh** — ✅ *(log 17:01)* **23 track latar (terkumpul ~2 hari, lintas
+  YouTube Music + Spotify) ter-drain jadi SATU `KIRIM: 23`, 23/23 diterima, 23 baris.** Bersih, tak
+  terpecah. Reliabilitas pending-store lintas-hari juga terbukti. *(Catatan: split kadang muncul dari
+  flush real-time menyela drain — kosmetik, tak merugikan data.)*
 - [~] **A3 · Timestamp asli** — SEBAGIAN ✅ *(screenshot Riwayat 02.46)*: jam tampil berurutan &
   wajar (19.17→19.18→19.22…, lagu pendek berjarak 1 mnt), TIDAK menumpuk di satu jam drain. Cek
   silang ke profil Last.fm masih disarankan untuk konfirmasi penuh.

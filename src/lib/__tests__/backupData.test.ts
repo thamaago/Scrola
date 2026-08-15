@@ -101,3 +101,47 @@ describe('mergeBackup — non-destruktif', () => {
     expect(plan.noteRestores).toHaveLength(0);
   });
 });
+
+// ---- Tiket bertahan lewat backup (deterministik dari riwayat) ----
+import { computeEarnedTickets } from '../ticketSerialLogic';
+import { mergeCorrections } from '../corrections';
+
+describe('tiket bertahan backup→restore (deterministik dari riwayat)', () => {
+  it('computeEarnedTickets sama sebelum & sesudah serialize→parse', () => {
+    const rows = [
+      { artist: 'Muse', track: 'Starlight', timestamp: 1_700_000_000 },
+      { artist: 'Muse', track: 'Uprising', timestamp: 1_700_000_100 },
+      { artist: 'Adele', track: 'Hello', timestamp: 1_700_000_200 },
+    ];
+    const before = computeEarnedTickets(rows);
+    const parsed = parseBackup(serializeBackup(rows, 123));
+    const after = computeEarnedTickets(parsed.rows);
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+  });
+});
+
+describe('corrections di dalam backup', () => {
+  const c = (fa: string, ft: string, ta: string, tt: string) => ({ fromArtist: fa, fromTrack: ft, toArtist: ta, toTrack: tt });
+
+  it('serialize menyertakan corrections; parse mengembalikannya', () => {
+    const rows = [{ artist: 'A', track: 'x', timestamp: 1 }];
+    const corr = [c('a', 'x', 'A Real', 'X Real')];
+    const parsed = parseBackup(serializeBackup(rows, 1, corr));
+    expect(parsed.corrections).toEqual(corr);
+  });
+
+  it('backup lama tanpa corrections -> parsed.corrections = []', () => {
+    const parsed = parseBackup(serializeBackup([{ artist: 'A', track: 'x', timestamp: 1 }], 1));
+    expect(parsed.corrections).toEqual([]);
+  });
+
+  it('mergeCorrections: union, tidak menimpa aturan lokal yang sudah ada', () => {
+    const local = [c('a', 'x', 'Lokal', 'X')];
+    const incoming = [c('a', 'x', 'Masuk', 'X'), c('b', 'y', 'Baru', 'Y')];
+    const merged = mergeCorrections(local, incoming);
+    // aturan lokal 'a|x' dipertahankan (tidak ditimpa), 'b|y' ditambahkan
+    expect(merged.find((r) => r.fromArtist === 'a')!.toArtist).toBe('Lokal');
+    expect(merged.some((r) => r.fromArtist === 'b')).toBe(true);
+    expect(merged).toHaveLength(2);
+  });
+});

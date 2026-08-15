@@ -124,3 +124,20 @@ export function isScrobbableMetadata(artist: string | null | undefined, track: s
   if (t === '' || looksLikeUriTitle(t)) return false;
   return true;
 }
+
+/**
+ * Keputusan MURNI: apakah sebuah sumber (aplikasi) boleh di-scrobble? Pemutar internal Scrola selalu
+ * boleh (pengguna memilihnya langsung). Sumber eksternal butuh master toggle nyala DAN tidak ada di
+ * daftar diabaikan. Dipakai untuk menyaring app non-musik (mis. menonton video di YouTube) secara
+ * deterministik — karena audio vs video tak bisa dibedakan andal dari metadata notifikasi.
+ */
+export function shouldScrobbleSource(
+  sourcePackage: string | undefined,
+  externalAllowed: boolean,
+  ignoredSources: string[]
+): boolean {
+  if (sourcePackage === 'com.scrola.app') return true;
+  if (!externalAllowed) return false;
+  if (sourcePackage && ignoredSources.includes(sourcePackage)) return false;
+  return true;
+}

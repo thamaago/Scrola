@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { getTicketCollection } from '../lib/db/queries';
 import type { CollectibleTicket, TicketProgress, TicketKind } from '../lib/ticketSerialLogic';
+import { renderTicketShareImage } from '../lib/ticketShareImage';
+import { SharePlugin } from '../lib/share';
 
 /**
  * TiketKoleksiScreen — dinding koleksi "tiket bernomor seri".
@@ -19,6 +21,7 @@ const KIND_LABEL: Record<TicketKind, string> = {
   penemuan: 'Penemuan',
   setia: 'Setia',
   beruntun: 'Beruntun',
+  trofi: 'Trofi',
 };
 
 function formatEarned(sec: number): string {
@@ -47,6 +50,25 @@ function ProgressRow({ label, ordinal, remaining, unit }: {
 }
 
 function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
+  const [sharing, setSharing] = useState(false);
+
+  async function handleShare() {
+    if (sharing) return;
+    setSharing(true);
+    try {
+      const base64 = await renderTicketShareImage(ticket);
+      await SharePlugin.shareImage({
+        base64,
+        filename: `scrola-tiket-${ticket.serial}.png`,
+        title: `Tiket ${ticket.serial}`,
+      });
+    } catch (e) {
+      console.warn('Gagal membagikan tiket:', e);
+    } finally {
+      setSharing(false);
+    }
+  }
+
   return (
     <div className="flex rounded-r-lg overflow-hidden border border-amber/20 bg-surface">
       <div className="ticket-perforation shrink-0" aria-hidden="true" />
@@ -64,12 +86,27 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
         {ticket.subject && (
           <p className="text-sm text-muted truncate mt-0.5">{ticket.subject}</p>
         )}
+        {ticket.earnedTrack && (
+          <p className="text-[13px] text-muted/70 italic truncate mt-0.5">
+            {ticket.subject
+              ? `lewat “${ticket.earnedTrack.track}”`
+              : `${ticket.earnedTrack.artist} — ${ticket.earnedTrack.track}`}
+          </p>
+        )}
 
-        {/* Cap nomor seri — elemen signature. Kuningan, mono, sedikit miring seperti stempel. */}
-        <div className="mt-3">
+        {/* Cap nomor seri (signature) + bagikan tiket sebagai gambar (stub 9:16). */}
+        <div className="mt-3 flex items-center justify-between gap-2">
           <span className="inline-block font-mono text-[11px] tracking-[0.18em] text-amber uppercase border border-amber/40 rounded px-2 py-1 -rotate-[1.5deg]">
             № {ticket.serial}
           </span>
+          <button
+            onClick={handleShare}
+            disabled={sharing}
+            className="font-mono text-[11px] text-amber border border-amber/40 rounded-full px-3 py-1.5 disabled:opacity-40 active:scale-[0.98] transition-transform shrink-0"
+            aria-label={`Bagikan tiket ${ticket.serial}`}
+          >
+            {sharing ? 'Menyiapkan…' : '↗ Bagikan'}
+          </button>
         </div>
       </div>
     </div>

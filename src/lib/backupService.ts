@@ -9,6 +9,7 @@ import {
   setHistoryNote,
   setLoved,
 } from './db/queries';
+import { loadCorrections, mergeInCorrections } from './correctionsStore';
 
 /**
  * backupService.ts — orkestrasi tipis antara DB dan logika backup MURNI (backupData.ts).
@@ -20,6 +21,7 @@ export interface RestoreSummary {
   inserted: number;
   notesRestored: number;
   favoritesRestored: number;
+  correctionsRestored: number;
   conflicts: number;
   exportedAt: number;
 }
@@ -27,7 +29,8 @@ export interface RestoreSummary {
 /** Bangun isi file backup JSON dari seluruh riwayat saat ini. */
 export async function buildBackupJson(nowSec: number = Math.floor(Date.now() / 1000)): Promise<string> {
   const rows = await getAllHistoryForBackup();
-  return serializeBackup(rows, nowSec);
+  const corrections = await loadCorrections();
+  return serializeBackup(rows, nowSec, corrections);
 }
 
 /**
@@ -42,11 +45,13 @@ export async function restoreFromJson(json: string): Promise<RestoreSummary> {
   if (plan.toInsert.length > 0) await insertBackupRows(plan.toInsert);
   for (const { id, note } of plan.noteRestores) await setHistoryNote(id, note);
   for (const id of plan.favoriteRestores) await setLoved(id, true);
+  const correctionsRestored = await mergeInCorrections(parsed.corrections);
 
   return {
     inserted: plan.toInsert.length,
     notesRestored: plan.noteRestores.length,
     favoritesRestored: plan.favoriteRestores.length,
+    correctionsRestored,
     conflicts: plan.noteConflicts,
     exportedAt: parsed.exportedAt,
   };

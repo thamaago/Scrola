@@ -13,7 +13,9 @@
  * prinsip "pisahkan logika murni, uji dulu sebelum integrasi".
  */
 
-export type TicketKind = 'jejak' | 'penemuan' | 'setia' | 'beruntun';
+import { detectTrophies } from './trophies';
+
+export type TicketKind = 'jejak' | 'penemuan' | 'setia' | 'beruntun' | 'trofi';
 
 /** Baris riwayat minimal yang dibutuhkan untuk menghitung tiket. Kompatibel dengan SisiBRow. */
 export interface TicketRow {
@@ -34,6 +36,13 @@ export interface CollectibleTicket {
   earnedAtSec: number;
   /** Subjek deskriptif untuk tiket yang terkait entitas (mis. nama artis penemuan). */
   subject?: string;
+  /**
+   * Lagu yang MENCETAK tiket ini (scrobble pemicu). Untuk 'jejak' = scrobble ke-N; untuk 'penemuan'
+   * = lagu yang mengenalkan artis itu. Untuk TAMPILAN saja — TIDAK memengaruhi serial (serial tetap
+   * dari ordinal/subject, supaya tiket yang sudah terkumpul tak bergeser). Berlaku untuk semua jenis
+   * tiket, termasuk yang ditambahkan nanti.
+   */
+  earnedTrack?: { artist: string; track: string };
 }
 
 export interface TicketConfig {
@@ -41,6 +50,10 @@ export interface TicketConfig {
   jejakMilestones?: number[];
   /** Milestone jumlah artis unik ditemukan yang mencetak tiket "penemuan". */
   penemuanMilestones?: number[];
+  /** Milestone jumlah putar SATU artis yang mencetak tiket "setia". */
+  setiaMilestones?: number[];
+  /** Milestone panjang streak hari beruntun yang mencetak tiket "beruntun". */
+  beruntunMilestones?: number[];
 }
 
 /** Normalisasi artis untuk dedup penemuan (trim + lowercase). Dipakai bersama agar konsisten. */
@@ -53,11 +66,16 @@ const KIND_CODE: Record<TicketKind, string> = {
   penemuan: 'P',
   setia: 'S',
   beruntun: 'B',
+  trofi: 'T',
 };
 
 /** Default milestone. Dipisah & diekspor supaya bisa dikonfigurasi (dan diuji dengan angka kecil). */
 export const JEJAK_MILESTONES = [1, 100, 500, 1000, 5000, 10000];
 export const PENEMUAN_MILESTONES = [1, 10, 25, 50, 100, 250];
+/** Berapa kali SATU artis diputar untuk mencetak tiket "setia" (kesetiaan pada satu artis). */
+export const SETIA_MILESTONES = [25, 50, 100, 250];
+/** Panjang streak HARI beruntun (ada scrobble tiap hari) untuk mencetak tiket "beruntun". */
+export const BERUNTUN_MILESTONES = [3, 7, 14, 30, 100];
 
 /**
  * Hash string deterministik kecil (varian djb2) -> base36, 4 karakter. Dipakai untuk membuat serial
@@ -95,6 +113,20 @@ function penemuanLabel(ordinal: number): string {
     : `Artis ke-${ordinal} yang kamu temukan`;
 }
 
+function setiaLabel(count: number): string {
+  return `Diputar ${count}×`;
+}
+
+function beruntunLabel(count: number): string {
+  return `${count} hari beruntun`;
+}
+
+/** Nomor hari LOKAL (hari sejak epoch, zona waktu perangkat) — untuk mendeteksi hari beruntun. */
+function localDayNumber(unixSec: number): number {
+  const d = new Date(unixSec * 1000);
+  return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86400000);
+}
+
 /**
  * Hitung semua tiket koleksi yang SUDAH diperoleh dari riwayat.
  *
@@ -111,6 +143,8 @@ export function computeEarnedTickets(
 ): CollectibleTicket[] {
   const jejakSet = new Set(config.jejakMilestones ?? JEJAK_MILESTONES);
   const penemuanSet = new Set(config.penemuanMilestones ?? PENEMUAN_MILESTONES);
+  const setiaSet = new Set(config.setiaMilestones ?? SETIA_MILESTONES);
+  const beruntunSet = new Set(config.beruntunMilestones ?? BERUNTUN_MILESTONES);
 
   // Urutkan kronologis tanpa menyentuh input asli. Tie-break stabil pakai artist+track supaya
   // hasil benar-benar deterministik walau ada timestamp identik.
@@ -123,6 +157,7 @@ export function computeEarnedTickets(
 
   const tickets: CollectibleTicket[] = [];
   const seenArtists = new Set<string>();
+  const artistPlays = new Map<string, number>();
   let count = 0;
   let discoveries = 0;
 
@@ -135,6 +170,7 @@ export function computeEarnedTickets(
         serial: ticketSerial('jejak', count),
         label: jejakLabel(count),
         earnedAtSec: row.timestamp,
+        earnedTrack: { artist: row.artist, track: row.track },
       });
     }
 
@@ -150,9 +186,71 @@ export function computeEarnedTickets(
           label: penemuanLabel(discoveries),
           earnedAtSec: row.timestamp,
           subject: row.artist.trim(),
+          earnedTrack: { artist: row.artist, track: row.track },
         });
       }
     }
+
+    // SETIA — satu artis mencapai N putar. Serial ber-hash subjek (artis) karena milestone bisa
+    // dicapai banyak artis; count melewati tiap nilai tepat sekali → tercetak sekali per artis.
+    if (artistKey.length > 0) {
+      const plays = (artistPlays.get(artistKey) ?? 0) + 1;
+      artistPlays.set(artistKey, plays);
+      if (setiaSet.has(plays)) {
+        const subject = row.artist.trim();
+        tickets.push({
+          kind: 'setia',
+          ordinal: plays,
+          serial: ticketSerial('setia', plays, subject),
+          label: setiaLabel(plays),
+          earnedAtSec: row.timestamp,
+          subject,
+          earnedTrack: { artist: row.artist, track: row.track },
+        });
+      }
+    }
+  }
+
+  // BERUNTUN — streak hari beruntun (ada scrobble tiap hari). Pass terpisah atas hari unik terurut;
+  // milestone dicetak SEKALI (pertama kali streak mencapainya). earnedTrack = scrobble hari penutup.
+  const firstRowOfDay = new Map<number, (typeof sorted)[number]>();
+  for (const row of sorted) {
+    const day = localDayNumber(row.timestamp);
+    if (!firstRowOfDay.has(day)) firstRowOfDay.set(day, row);
+  }
+  const days = [...firstRowOfDay.keys()].sort((a, b) => a - b);
+  const awardedBeruntun = new Set<number>();
+  let streak = 0;
+  let prevDay: number | null = null;
+  for (const day of days) {
+    streak = prevDay !== null && day === prevDay + 1 ? streak + 1 : 1;
+    prevDay = day;
+    if (beruntunSet.has(streak) && !awardedBeruntun.has(streak)) {
+      awardedBeruntun.add(streak);
+      const row = firstRowOfDay.get(day)!;
+      tickets.push({
+        kind: 'beruntun',
+        ordinal: streak,
+        serial: ticketSerial('beruntun', streak),
+        label: beruntunLabel(streak),
+        earnedAtSec: row.timestamp,
+        earnedTrack: { artist: row.artist, track: row.track },
+      });
+    }
+  }
+
+  // TROFI — pencapaian berpola/peristiwa (ala game), bukan sekadar jumlah putar/temuan. Deterministik
+  // dari riwayat; serial global per trofi (SCR-T-00000N), subject = deskripsi (untuk tampilan saja).
+  for (const hit of detectTrophies(sorted)) {
+    tickets.push({
+      kind: 'trofi',
+      ordinal: hit.def.ordinal,
+      serial: ticketSerial('trofi', hit.def.ordinal),
+      label: hit.def.label,
+      earnedAtSec: hit.row.timestamp,
+      subject: hit.def.desc,
+      earnedTrack: { artist: hit.row.artist, track: hit.row.track },
+    });
   }
 
   return tickets;

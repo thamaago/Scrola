@@ -37,3 +37,35 @@ export async function setExternalScrobbleEnabled(enabled: boolean): Promise<void
   externalScrobbleCache = enabled; // update cache dulu supaya UI & engine langsung konsisten
   await SecureStore.set({ key: KEY_EXTERNAL_SCROBBLE, value: enabled ? '1' : '0' });
 }
+
+// Daftar package sumber yang DIABAIKAN scrobble-nya (mis. app yang dipakai menonton video, bukan
+// mendengar musik). Deterministik & dikendalikan pengguna — audio vs video tak bisa dibedakan andal
+// dari metadata notifikasi, jadi ini lever yang jujur. Disimpan sebagai JSON array, di-cache di memori.
+const KEY_IGNORED_SOURCES = 'pref_ignored_sources';
+let ignoredSourcesCache: string[] | null = null;
+
+export async function getIgnoredSources(): Promise<string[]> {
+  if (ignoredSourcesCache !== null) return ignoredSourcesCache;
+  try {
+    const { value } = await SecureStore.get({ key: KEY_IGNORED_SOURCES });
+    const parsed = value ? JSON.parse(value) : [];
+    ignoredSourcesCache = Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch (e) {
+    console.warn('Gagal membaca daftar sumber diabaikan, memakai kosong:', e);
+    ignoredSourcesCache = [];
+  }
+  return ignoredSourcesCache;
+}
+
+export async function setIgnoredSources(packages: string[]): Promise<void> {
+  ignoredSourcesCache = packages;
+  await SecureStore.set({ key: KEY_IGNORED_SOURCES, value: JSON.stringify(packages) });
+}
+
+/** Toggle satu package di daftar diabaikan; kembalikan daftar baru. */
+export async function toggleIgnoredSource(pkg: string): Promise<string[]> {
+  const cur = await getIgnoredSources();
+  const next = cur.includes(pkg) ? cur.filter((p) => p !== pkg) : [...cur, pkg];
+  await setIgnoredSources(next);
+  return next;
+}

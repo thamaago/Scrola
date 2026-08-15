@@ -3,7 +3,7 @@ import { App as CapApp } from '@capacitor/app';
 import { NowPlaying, type NowPlayingState } from '../hooks/useNowPlaying';
 import { clearSession } from '../lib/secureStore';
 import { Diagnostics } from '../lib/diagnostics';
-import { getExternalScrobbleEnabled, setExternalScrobbleEnabled } from '../lib/preferences';
+import { getExternalScrobbleEnabled, setExternalScrobbleEnabled, getIgnoredSources, toggleIgnoredSource } from '../lib/preferences';
 import { getAccountStats, getQueueStatus } from '../lib/db/queries';
 import { flushQueue } from '../lib/scrobbleEngine';
 import { sourceLabel, isLikelyMusicSource } from '../lib/sourceLabels';
@@ -23,6 +23,7 @@ export default function SettingsScreen({
   const [crashLog, setCrashLog] = useState<string | null>(null);
   const [showCrashLog, setShowCrashLog] = useState(false);
   const [externalOn, setExternalOn] = useState(true);
+  const [ignoredSources, setIgnoredSources] = useState<string[]>([]);
   const [accountStats, setAccountStats] = useState<{ totalScrobbles: number; firstYear: number | null } | null>(null);
   const [queueStatus, setQueueStatus] = useState<{
     pending: number;
@@ -52,6 +53,7 @@ export default function SettingsScreen({
         // Plugin tidak tersedia (mis. preview web) — abaikan, fitur ini memang native-only.
       });
     getExternalScrobbleEnabled().then(setExternalOn).catch(() => {});
+    getIgnoredSources().then(setIgnoredSources).catch(() => {});
     refreshQueueStatus();
     refreshListenerDiag();
     getAccountStats()
@@ -143,6 +145,19 @@ export default function SettingsScreen({
     });
   }
 
+  // Bisukan/aktifkan scrobble dari satu sumber (mis. app YouTube utama = mayoritas video).
+  // Optimistic dengan rollback; sumber di daftar-abaikan tak akan discrobble (shouldScrobbleSource).
+  function handleToggleIgnore(pkg: string) {
+    const wasIgnored = ignoredSources.includes(pkg);
+    setIgnoredSources((cur) => (wasIgnored ? cur.filter((p) => p !== pkg) : [...cur, pkg]));
+    toggleIgnoredSource(pkg)
+      .then(setIgnoredSources)
+      .catch((e) => {
+        console.warn('Gagal menyimpan sumber yang dibisukan:', e);
+        setIgnoredSources((cur) => (wasIgnored ? [...cur, pkg] : cur.filter((p) => p !== pkg)));
+      });
+  }
+
   const externalNowPlaying =
     current && current.packageName !== 'com.scrola.app' ? current : null;
 
@@ -179,6 +194,7 @@ export default function SettingsScreen({
       `${s.favoritesRestored} favorit`,
       `${s.inserted} riwayat disisipkan`,
     ];
+    if (s.correctionsRestored > 0) parts.push(`${s.correctionsRestored} koreksi dipulihkan`);
     if (s.conflicts > 0) parts.push(`${s.conflicts} catatan lokal dipertahankan (tak ditimpa)`);
     return parts.join(' · ');
   }
@@ -370,15 +386,29 @@ export default function SettingsScreen({
                       Sumber terdeteksi ({musicSources.length})
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {musicSources.map((pkg) => (
-                        <span
-                          key={pkg}
-                          className="font-mono text-[11px] text-amber bg-amber/10 border border-amber/25 rounded-full px-2.5 py-1"
-                        >
-                          {sourceLabel(pkg)}
-                        </span>
-                      ))}
+                      {musicSources.map((pkg) => {
+                        const muted = ignoredSources.includes(pkg);
+                        return (
+                          <button
+                            key={pkg}
+                            onClick={() => handleToggleIgnore(pkg)}
+                            aria-pressed={!muted}
+                            className={`font-mono text-[11px] rounded-full px-2.5 py-1 border transition-colors active:scale-[0.98] ${
+                              muted
+                                ? 'text-muted bg-transparent border-white/15 line-through'
+                                : 'text-amber bg-amber/10 border-amber/25'
+                            }`}
+                          >
+                            {muted ? '🔇 ' : ''}{sourceLabel(pkg)}
+                          </button>
+                        );
+                      })}
                     </div>
+                    <p className="text-muted text-[11px] mt-2 leading-relaxed">
+                      Ketuk sumber untuk berhenti mencatat darinya — berguna untuk app yang dipakai
+                      menonton video (mis. YouTube), agar tontonan tak ikut ter-scrobble. Sumber musikmu
+                      yang lain tetap jalan.
+                    </p>
                   </div>
                 );
               })()}

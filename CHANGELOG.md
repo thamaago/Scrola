@@ -17,7 +17,99 @@ tooling).
 
 ## [Unreleased]
 
-### Added — mode tampilan Riwayat (Terbaru / periode / bercatatan)
+### Added — sistem TROFI (pencapaian ala game) + backup tiket & koreksi
+Menjawab: "pastikan tiap tiket unik seperti trophy game (bukan sekadar sering diputar / pertama
+didengar)" dan "pastikan data tiket & lainnya bisa di-backup".
+
+- **Jenis tiket baru `trofi`** — pencapaian BERPOLA/PERISTIWA, bukan hitungan putar. `trophies.ts`
+  (murni, TDD, **8 test**): Burung Hantu (dengar 00–04), Ayam Jago (subuh 04–06), Maraton (30
+  scrobble/hari), Jam Sibuk (15 scrobble/60 mnt), Kembali Pulang (jeda 30+ hari), Hari Beragam (20
+  artis berbeda/hari). Tiap trofi bernama, one-of-a-kind, dicetak SEKALI, deterministik dari riwayat.
+  Serial global `SCR-T-00000N`; ikon emblem khusus (medali berbintang).
+- **Backup tiket — sudah terjamin & kini terbukti.** Tiket = fungsi deterministik dari riwayat, dan
+  riwayat (artist/track/timestamp) ada di backup → restore meregenerasi tiket identik. Ditambah test
+  round-trip yang membuktikan `computeEarnedTickets` sama persis sebelum/sesudah serialize→parse.
+- **Backup koreksi (data user yang tadinya belum ter-backup).** Envelope backup kini menyertakan
+  `corrections`; `mergeCorrections` (murni, non-destruktif — aturan lokal tak ditimpa) + `mergeInCorrections`
+  di store; `buildBackupJson`/`restoreFromJson` membaca & memulihkannya; ringkasan restore menampilkan
+  "N koreksi dipulihkan". **4 test backup baru.**
+- Total **265 test**, tsc 0 error, brace seimbang. **Belum tervalidasi device.**
+
+### Added — aturan perolehan tiket SETIA & BERUNTUN
+- Jenis tiket `setia` & `beruntun` (yang ikonnya sudah dibuat) kini benar-benar BISA DIPEROLEH,
+  dihitung deterministik dari riwayat di `computeEarnedTickets` (TDD, **5 test baru**, total **253**):
+  - **SETIA** — satu artis mencapai N putar (default `[25, 50, 100, 250]`). Subject = artis; serial
+    ber-hash subjek (`SCR-S-000050-xxxx`) karena banyak artis bisa mencapai milestone sama; `earnedTrack`
+    = lagu pada putaran ke-N artis itu.
+  - **BERUNTUN** — streak hari beruntun (ada scrobble tiap hari, default `[3, 7, 14, 30, 100]`).
+    Serial global (`SCR-B-000007`); dicetak SEKALI saat streak pertama kali mencapai milestone;
+    `earnedTrack` = scrobble hari penutup streak. Beberapa scrobble di hari sama tak menambah streak.
+- Otomatis muncul di Koleksi Tiket (getTicketCollection pakai config default) lengkap dengan ikon
+  per-jenis (SETIA=riak, BERUNTUN=gelombang) dan tombol bagikan. Serial semua jenis tetap deterministik
+  & stabil. tsc 0 error, brace seimbang. **Belum tervalidasi device.**
+
+### Added — ikon musik generatif per-JENIS tiket (album-art khas Scrola)
+- Tiket tak menyimpan cover album & menarik cover Last.fm ke Canvas bermasalah (CORS -> taint ->
+  gagal export). Solusinya: **ikon musik generatif**, unik per lagu, on-brand, deterministik, tanpa
+  jaringan — dan kini **tiap JENIS tiket punya bentuk berkarakter sendiri**:
+  - **JEJAK** -> spektrum equalizer radial ("audio bloom") — perjalanan scrobble menumpuk.
+  - **PENEMUAN** -> konstelasi (bintang berjarak + garis) — menemukan bintang baru (vibe malam).
+  - **SETIA** -> riak/mandala (busur konsentris berjeda) — kembali berputar.
+  - **BERUNTUN** -> gelombang mendatar — momentum tak putus.
+- `emblemSeed(ticket)` (murni, TDD, total **248** test): seed dari LAGU (artist|track), fallback serial.
+  Renderer `drawTicketEmblem(...kind)` memakai PRNG mulberry32 → bentuk tetap UNIK per lagu di dalam
+  tiap jenis, tetap keluarga Scrola (bingkai stempel + palet Hutan Malam + aksen amber/coral by seed).
+- Layout: judul -> IKON (pusat) -> artis/lagu/tanggal -> cap serial -> atribusi. Mockup PIL memperlihatkan
+  4 jenis. tsc 0 error, brace seimbang, tanpa kode mati. **Belum tervalidasi device.**
+
+### Added — bagikan tiket sebagai gambar (stub 9:16) — unit iklan organik
+- Tiap tiket koleksi kini bisa dibagikan sebagai **gambar stub vertikal 1080×1920** (format WhatsApp
+  Status / Instagram Story — kanal berbagi dominan di Indonesia). Tombol "↗ Bagikan" di tiap tiket →
+  render Canvas → `SharePlugin.shareImage` (pola & plumbing sama dengan zine Sisi B, tanpa dependensi
+  baru).
+- **Keunikan & fungsi-iklan by design:** (1) **cap № serial** jadi hero (bukti "diperoleh", serial
+  rendah = early-adopter); (2) **lagu pemicu** + milestone bercerita; (3) **pola guilloche
+  unik-per-serial** (deterministik dari `ticketPatternSeed`, seperti uang kertas — sulit ditiru); (4)
+  **atribusi menyatu** di gambar (wordmark "Scrola" + "Every song leaves a story." + "scrola.app")
+  supaya tiap tiket yang dibagikan menarik install.
+- Pure-logic + TDD: `ticketShareLayout.ts` (`ticketPatternSeed` deterministik, `ticketEarnedLine`)
+  **6 test baru**, total **245**. Renderer `ticketShareImage.ts` (Canvas). Mockup PIL
+  `scripts/mockup_ticket_share.py` untuk persetujuan layout.
+- tsc 0 error, brace seimbang. **Belum tervalidasi device** — perlu cek render Canvas + share sheet di
+  SM-X706B (font Fraunces/IBM Plex Mono, `№`, guilloche). Serverless → rarity bersifat pribadi
+  ("1 dari 1 milikmu"), tak menjanjikan kelangkaan global.
+- Dari pertanyaan device: tiket JEJAK ("Scrobble pertamamu", "Scrobble ke-100") tak menampilkan lagu
+  karena merayakan JUMLAH, bukan satu lagu. Kini **setiap tiket** (semua jenis, termasuk yang akan
+  ditambahkan nanti) menyimpan **lagu pemicunya** lewat field baru `CollectibleTicket.earnedTrack`:
+  jejak ke-N = scrobble ke-N; penemuan = lagu yang mengenalkan artis itu.
+- **Serial tetap** — `earnedTrack` hanya untuk TAMPILAN; `ticketSerial` tak berubah (jejak dari
+  ordinal, penemuan dari artis), jadi tiket yang sudah terkumpul tak bergeser. Diuji eksplisit
+  (**3 test baru**, total **239**): earnedTrack benar + serial tak berubah.
+- UI `TiketKoleksiScreen`: jejak menampilkan "Artis — Judul"; penemuan (artis sudah tampil) menampilkan
+  "lewat 'Judul'". Data sudah tersedia dari query tiket (`SELECT artist, track, timestamp`) — tanpa
+  perubahan skema/query. tsc 0 error, brace seimbang. **Belum tervalidasi device.**
+- Dari feedback device: mode Per hari/minggu/bulan menampilkan daftar penuh menjulur ke bawah. Kini
+  dipaginasi **10 lagu per halaman** dengan bar navigasi (‹ Sebelumnya / Berikutnya ›, "1–10 dari 26 ·
+  Hal 1/3") di atas & bawah daftar. Mode **Terbaru** tetap 10 tanpa paging (1 halaman).
+- Pure-logic + TDD: `paginateHistory(items, page, pageSize=10)` (**5 test baru**, total **236**) —
+  memotong per halaman & meng-clamp halaman di luar rentang (aman saat ganti mode/item berubah).
+  Alur baru: item mode → **paginate** → group **halaman ini** (bentuk grup identik → rendering tak
+  berubah). Halaman reset ke 0 saat mode berganti.
+- Murni logika + React (tanpa native). tsc 0 error, brace seimbang. **Belum tervalidasi device** —
+  cek: mode Per hari dgn >10 lagu menampilkan bar, Berikutnya/Sebelumnya berpindah halaman, tombol
+  nonaktif di ujung.
+- Logika filter per-sumber (`shouldScrobbleSource` + `getIgnoredSources`/`toggleIgnoredSource`,
+  diterapkan di drain & real-time) sudah ada dari sesi sebelumnya; sesi ini **melengkapi UI-nya** di
+  Settings. Chip "Sumber terdeteksi" kini **bisa diketuk** untuk membisukan/mengaktifkan scrobble dari
+  app itu (dibisukan = dicoret + 🔇), dengan hint bahwa ini berguna untuk app menonton video (mis.
+  YouTube utama) tanpa mematikan sumber musik lain.
+- Menjawab kebutuhan pengguna dari log device: "Key & Peele" ter-scrobble dari
+  `com.google.android.youtube` (app YouTube utama, mayoritas video). Membisukan sumber itu menghentikan
+  tontonan ter-scrobble secara deterministik, sementara Spotify & YouTube Music tetap jalan. (Catatan:
+  ini per-APP; tak bisa memisah musik vs video DI DALAM app yang sama — batasan semua scrobbler notif.)
+- Optimistic + rollback bila persist gagal. tsc 0 error, 231 test lolos, brace seimbang. **Belum
+  tervalidasi device** — perlu cek: ketuk sumber → jadi dibisukan → scrobble berikutnya dari sumber itu
+  tak muncul.
 - Riwayat kini punya pemilih mode: **Terbaru** (default, hanya **10 lagu terakhir**), **Per hari**,
   **Per minggu**, **Per bulan** (ketiganya menampilkan riwayat **UTUH** dikelompokkan per periode), dan
   **Bercatatan** (hanya lagu yang punya catatan). Sesuai permintaan: default ringkas, periode = lengkap.

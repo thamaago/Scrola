@@ -72,3 +72,22 @@ export function applyCorrection(input: NamePair, rules: CorrectionRule[]): NameP
   }
   return input;
 }
+
+/**
+ * Gabungkan aturan koreksi dari backup ke aturan lokal — NON-DESTRUKTIF: aturan lokal untuk kunci
+ * `from` yang sama DIPERTAHANKAN (tidak ditimpa data masuk), aturan `from` baru ditambahkan. Dipakai
+ * saat restore agar koreksi buatan pengguna ikut ter-backup tanpa menghapus yang sudah ada.
+ */
+export function mergeCorrections(local: CorrectionRule[], incoming: CorrectionRule[]): CorrectionRule[] {
+  const keyOf = (r: CorrectionRule) => matchKey(r.fromArtist, r.fromTrack);
+  const seen = new Set(local.map(keyOf));
+  const merged = [...local];
+  for (const r of incoming) {
+    const k = keyOf(r);
+    if (!seen.has(k)) {
+      seen.add(k);
+      merged.push(r);
+    }
+  }
+  return merged;
+}

@@ -32,6 +32,7 @@ export interface ParsedBackup {
   version: number;
   exportedAt: number;
   rows: BackupHistoryRow[];
+  corrections: import('./corrections').CorrectionRule[];
 }
 
 export interface MergePlan {
@@ -53,7 +54,11 @@ function keyOf(r: { artist: string; track: string; timestamp: number }): string 
 }
 
 /** Serialize daftar baris riwayat -> JSON backup ber-envelope & berversi. */
-export function serializeBackup(rows: BackupHistoryRow[], exportedAtSec: number): string {
+export function serializeBackup(
+  rows: BackupHistoryRow[],
+  exportedAtSec: number,
+  corrections: import('./corrections').CorrectionRule[] = []
+): string {
   const noteCount = rows.filter((r) => hasText(r.note)).length;
   const favCount = rows.filter((r) => r.favorite).length;
   return JSON.stringify({
@@ -61,8 +66,9 @@ export function serializeBackup(rows: BackupHistoryRow[], exportedAtSec: number)
     type: BACKUP_TYPE,
     version: BACKUP_VERSION,
     exportedAt: exportedAtSec,
-    counts: { history: rows.length, notes: noteCount, favorites: favCount },
+    counts: { history: rows.length, notes: noteCount, favorites: favCount, corrections: corrections.length },
     history: rows,
+    corrections,
   });
 }
 
@@ -102,7 +108,25 @@ export function parseBackup(json: string): ParsedBackup {
       favorite: r.favorite === true,
     };
   });
-  return { version: obj.version, exportedAt: typeof obj.exportedAt === 'number' ? obj.exportedAt : 0, rows };
+  const corrections: import('./corrections').CorrectionRule[] = Array.isArray(obj.corrections)
+    ? obj.corrections
+        .filter(
+          (c: any) =>
+            hasText(c?.fromArtist) && hasText(c?.fromTrack) && hasText(c?.toArtist) && hasText(c?.toTrack)
+        )
+        .map((c: any) => ({
+          fromArtist: c.fromArtist,
+          fromTrack: c.fromTrack,
+          toArtist: c.toArtist,
+          toTrack: c.toTrack,
+        }))
+    : [];
+  return {
+    version: obj.version,
+    exportedAt: typeof obj.exportedAt === 'number' ? obj.exportedAt : 0,
+    rows,
+    corrections,
+  };
 }
 
 /**

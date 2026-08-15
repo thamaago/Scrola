@@ -104,3 +104,41 @@ describe('recentHistory', () => {
     expect(recentHistory([rowN(1, 1)], 10)).toHaveLength(1);
   });
 });
+
+// ---- Paging ----
+import { paginateHistory } from '../historyGrouping';
+
+describe('paginateHistory', () => {
+  const make = (n: number) => Array.from({ length: n }, (_, i) => rowN(i, 1000 - i));
+
+  it('26 item -> 3 halaman (10/10/6)', () => {
+    const items = make(26);
+    expect(paginateHistory(items, 0).pageItems).toHaveLength(10);
+    expect(paginateHistory(items, 1).pageItems).toHaveLength(10);
+    expect(paginateHistory(items, 2).pageItems).toHaveLength(6);
+    expect(paginateHistory(items, 0).totalPages).toBe(3);
+    expect(paginateHistory(items, 0).total).toBe(26);
+  });
+
+  it('halaman ke-2 berisi item ke-11..20', () => {
+    const items = make(26);
+    expect(paginateHistory(items, 1).pageItems.map((r) => r.id)).toEqual([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+  });
+
+  it('halaman di luar rentang di-clamp ke halaman valid terakhir', () => {
+    const items = make(26);
+    expect(paginateHistory(items, 99).page).toBe(2);
+    expect(paginateHistory(items, -5).page).toBe(0);
+  });
+
+  it('kosong -> 1 halaman, tanpa item', () => {
+    const p = paginateHistory([], 0);
+    expect(p.totalPages).toBe(1);
+    expect(p.pageItems).toHaveLength(0);
+    expect(p.total).toBe(0);
+  });
+
+  it('<=10 item -> 1 halaman', () => {
+    expect(paginateHistory(make(7), 0).totalPages).toBe(1);
+  });
+});
