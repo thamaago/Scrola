@@ -17,6 +17,31 @@ tooling).
 
 ## [Unreleased]
 
+### Changed — notifikasi Scrola hilang otomatis saat diam (tak lagi menggantung lagu terakhir)
+- Notifikasi foreground Scrola dulu terus menampilkan lagu TERAKHIR walau tak ada yang diputar (sifat
+  media Android: sesi tetap hidup dalam keadaan paused). Kini saat playback dijeda/diam,
+  `ScrobbleForegroundService` menjadwalkan penghapusan notifikasi otomatis setelah 2 menit
+  (`stopForeground(REMOVE)` + `stopSelf`); saat listener mendeteksi playback baru (`update(isPlaying=true)`),
+  jadwal dibatalkan & notifikasi muncul lagi. Aturan foreground tetap dipatuhi (startForeground
+  dipanggil segera; hanya penghentiannya yang ditunda). onDestroy & ACTION_STOP membatalkan jadwal.
+- Kosmetik & tak memengaruhi scrobble (digerbang status PLAYING + ambang + dedup). Notifikasi milik
+  app sumber (Spotify/YouTube Music) tetap di luar kendali Scrola. Perubahan native — **belum
+  tervalidasi device** (uji: putar → jeda → tunggu 2 mnt → notifikasi Scrola hilang → putar lagi →
+  muncul kembali).
+
+### Changed — kembalikan framing "Trofi" jadi tiket, jam dengar di tiap tiket, emblem mencolok
+- **Konsep disatukan kembali sebagai TIKET.** Label kategori "TROFI" diganti "MOMEN" (di aplikasi &
+  gambar bagikan) — pencapaian berpola (Burung Hantu, Ayam Jago, dst.) tetap ada, tapi dibingkai
+  sebagai tiket koleksi, bukan trofi game terpisah. Jenis internal & serial `SCR-T-…` dipertahankan
+  agar tiket yang sudah didapat tak bergeser.
+- **Jam dengar di tiap tiket.** `formatEarned` (kartu & gambar bagikan) kini menampilkan tanggal +
+  jam, mis. "11 Agu 2026 · 05.02" (format Indonesia, pemisah titik).
+- **Tiap tiket mencolok unik.** Emblem musik generatif (yang tadinya hanya di gambar bagikan) kini
+  tampil di SETIAP kartu di Koleksi Tiket — komponen `TicketEmblem` merender emblem per lagu+jenis di
+  kanvas mini (dpr-aware). Tiap tiket langsung terlihat berbeda sekilas.
+- tsc 0 error, 265 test, brace seimbang. **Belum tervalidasi device** (render emblem kanvas mini di
+  daftar + jam dengar).
+
 ### Added — sistem TROFI (pencapaian ala game) + backup tiket & koreksi
 Menjawab: "pastikan tiap tiket unik seperti trophy game (bukan sekadar sering diputar / pertama
 didengar)" dan "pastikan data tiket & lainnya bisa di-backup".

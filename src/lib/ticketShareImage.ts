@@ -22,13 +22,15 @@ const KIND_LABEL: Record<CollectibleTicket['kind'], string> = {
   penemuan: 'PENEMUAN',
   setia: 'SETIA',
   beruntun: 'BERUNTUN',
-  trofi: 'TROFI',
+  trofi: 'MOMEN',
 };
 
 function formatEarned(unixSec: number): string {
   const d = new Date(unixSec * 1000);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} · ${hh}.${mm}`;
 }
 
 /** Bungkus teks ke beberapa baris agar muat di lebar maksimum. */
@@ -269,7 +271,7 @@ function drawMedallion(ctx: CanvasRenderingContext2D, cx: number, cy: number, r:
  * PENEMUAN=konstelasi, SETIA=riak, BERUNTUN=gelombang), tetap UNIK per lagu (seed), tetap keluarga
  * Scrola (bingkai stempel + palet Hutan Malam + aksen amber/coral). Album-art khas tanpa jaringan.
  */
-function drawTicketEmblem(
+export function drawTicketEmblem(
   ctx: CanvasRenderingContext2D,
   cx: number,
   cy: number,

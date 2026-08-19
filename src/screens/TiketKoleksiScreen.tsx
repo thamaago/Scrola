@@ -1,9 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { getTicketCollection } from '../lib/db/queries';
 import type { CollectibleTicket, TicketProgress, TicketKind } from '../lib/ticketSerialLogic';
-import { renderTicketShareImage } from '../lib/ticketShareImage';
+import { renderTicketShareImage, drawTicketEmblem } from '../lib/ticketShareImage';
+import { emblemSeed } from '../lib/ticketShareLayout';
 import { SharePlugin } from '../lib/share';
+
+/** Emblem generatif mini per tiket — ikon musik unik per lagu+jenis, membuat tiap tiket mencolok beda. */
+function TicketEmblem({ ticket, size = 78 }: { ticket: CollectibleTicket; size?: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    drawTicketEmblem(ctx, size / 2, size / 2, size / 2 - 3, emblemSeed(ticket), ticket.kind);
+  }, [ticket, size]);
+  return <canvas ref={ref} style={{ width: size, height: size }} className="shrink-0" aria-hidden="true" />;
+}
 
 /**
  * TiketKoleksiScreen — dinding koleksi "tiket bernomor seri".
@@ -21,13 +40,16 @@ const KIND_LABEL: Record<TicketKind, string> = {
   penemuan: 'Penemuan',
   setia: 'Setia',
   beruntun: 'Beruntun',
-  trofi: 'Trofi',
+  trofi: 'Momen',
 };
 
 function formatEarned(sec: number): string {
   const d = new Date(sec * 1000);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const date = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${date} · ${hh}.${mm}`;
 }
 
 function ProgressRow({ label, ordinal, remaining, unit }: {
@@ -72,6 +94,9 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
   return (
     <div className="flex rounded-r-lg overflow-hidden border border-amber/20 bg-surface">
       <div className="ticket-perforation shrink-0" aria-hidden="true" />
+      <div className="flex items-center pl-3 pr-1 shrink-0">
+        <TicketEmblem ticket={ticket} />
+      </div>
       <div className="flex-1 py-4 pr-4 pl-3 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-[10px] tracking-[0.2em] text-amber uppercase">
