@@ -23,7 +23,7 @@ Bukti: centang bila lolos; simpan **screenshot layar** atau **Log Peristiwa** (P
 - [~] **A3 · Timestamp asli** — SEBAGIAN ✅ *(screenshot Riwayat 02.46)*: jam tampil berurutan &
   wajar (19.17→19.18→19.22…, lagu pendek berjarak 1 mnt), TIDAK menumpuk di satu jam drain. Cek
   silang ke profil Last.fm masih disarankan untuk konfirmasi penuh.
-- [ ] **A4 · Backoff** — putuskan internet saat ada scrobble tertahan. → Log: jeda retry **membesar** (`flush error → backoff ~40s`, lalu `~80s`…), **bukan** spam tiap 20 dtk. Sambungkan lagi → satu flush sukses, cadence normal. *(uji backoff)*
+- [x] **A4 · Backoff** — ✅ *(log 16:57)* Flush 11 track **gagal ke-1** → `backoff ~20s` → **retry 16:58:09 sukses 11/11, 0 hilang**. Retry-setelah-jeda terbukti; bukan spam. *(Backoff eksponensial penuh 40s→80s belum sempat teruji karena hanya 1 kegagalan, tapi jalur retry inti valid.)*
 - [ ] **A5 · Ulang lagu** — putar lagu, lalu ulang dari awal. → Tercatat **dua kali**. *(deteksi repeat)*
 - [ ] **A6 · Lintas-pemutar** — scrobble dari **YouTube Music**. → Terdeteksi & tercatat, tak terasa lambat.
 

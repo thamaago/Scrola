@@ -1,7 +1,7 @@
-# Devlog — Pengembangan Desain
+# Devlog — Redesign UI "Hutan Malam"
 
-> Log pengembangan desain Scrola — entri terbaru di atas. Riwayat perubahan teknis lengkap (yang
-> sudah masuk ke kode) ada di [`../CHANGELOG.md`](../CHANGELOG.md).
+> Log pengembangan desain Scrola. Cocok ditaruh di `docs/DEVLOG.md` — entri terbaru di atas.
+> Entri CHANGELOG siap pakai ada di bagian bawah file ini.
 
 ---
 
@@ -56,13 +56,33 @@ UI v0.1 fungsional tapi punya beberapa masalah yang teridentifikasi lewat audit 
 - [ ] Shared-element transition tiket Now Playing → Riwayat
 - [ ] Ide yang ditunda: Riwayat "Gulungan Struk" (satu roll per hari), Now Playing "Panggung Vinyl" (ring progres conic), Login "Sampul Buku" (onboarding 3 langkah)
 
-### Artefak desain
-
-Prototipe interaktif final dan kanvas audit (12 konsep + eksplorasi palet) dibuat di Claude Design
-dan tidak di-commit ke repositori — hasil implementasinya ada di kode `src/`. Spesifikasi per file
-dan keputusan desain terangkum di dokumen ini serta [`DESIGN.md`](./DESIGN.md).
+### Artefak
+- `Scrola Prototype.dc.html` — prototipe interaktif final
+- `Scrola UI Review.dc.html` — kanvas audit + 12 konsep + eksplorasi palet
+- `README.md` (folder ini) — spec implementasi per file
+- `screenshots/` — 5 layar final
 
 ---
 
-> Entri CHANGELOG untuk redesign ini (bagian `Changed` dan `Added` "Hutan Malam" + layar "Sisi B")
-> sudah dimasukkan ke [`../CHANGELOG.md`](../CHANGELOG.md).
+## Entri CHANGELOG siap pakai
+
+Salin ke `CHANGELOG.md` di bawah `## [Unreleased]` (atau versi berikutnya):
+
+```markdown
+### Changed
+- **Redesign UI "Hutan Malam"** — palet baru hijau lumut + emas kuningan menggantikan
+  plum/amber (nilai token di `tailwind.config.js`; nama token tidak berubah).
+- Now Playing: progres scrobble kini divisualkan sebagai tiket yang "tercetak" keluar
+  dari slot printer; tiket "sobek" + toast saat resmi tercatat. Kontrol seek 56px,
+  play 72px.
+- Riwayat: dikelompokkan per hari (header + jumlah lagu); entri baru beranimasi masuk.
+- Pengaturan: kartu akun "Backstage Pass" (total scrobble, tahun bergabung).
+- Login: brand hero berbentuk tiket "ADMIT ONE" dengan animasi sobek saat berhasil masuk.
+- Navigasi tab kini beranimasi (slide + fade, indikator amber di nav bar).
+
+### Added
+- Layar "Sisi B": rekap mingguan naratif (lagu teratas, jam emas, artis baru,
+  irama minggu) — dihitung sepenuhnya dari SQLite lokal.
+- Pengaturan: toggle "Scrobble dari app lain" untuk membatasi sumber scrobble
+  ke player internal tanpa mencabut izin notifikasi.
+```

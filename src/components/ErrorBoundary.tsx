@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { tActive } from '../lib/i18n';
 
 interface Props {
   children: ReactNode;
@@ -43,16 +44,17 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-ink flex flex-col items-center justify-center px-8 text-center">
-          <p className="font-display text-2xl text-paper mb-2">Ada yang tidak beres</p>
+          {/* Komponen class di ATAS I18nProvider → tak bisa pakai context. Cermin locale modul
+              (tActive) tetap mencerminkan bahasa aktif, jadi layar crash pun ikut bahasa. */}
+          <p className="font-display text-2xl text-paper mb-2">{tActive('err.boundary.title')}</p>
           <p className="text-muted text-sm max-w-xs mb-6">
-            Scrola mengalami kendala tak terduga. Coba muat ulang — datamu (riwayat &amp; sesi
-            login) aman tersimpan.
+            {tActive('err.boundary.body')}
           </p>
           <button
             onClick={() => window.location.reload()}
             className="bg-amber text-ink font-body font-semibold rounded-lg py-3 px-6"
           >
-            Muat Ulang
+            {tActive('err.boundary.reload')}
           </button>
           {import.meta.env.DEV && (
             <p className="text-muted/50 text-[10px] font-mono mt-6 max-w-xs break-words">

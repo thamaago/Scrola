@@ -11,6 +11,7 @@ import { saveOrHoldNote, getPendingNote } from '../lib/pendingNotes';
 import { renderShareCard } from '../lib/shareImage';
 import { SharePlugin } from '../lib/share';
 import { sourceLabel } from '../lib/sourceLabels';
+import { useI18n } from '../lib/i18nContext';
 import type { NowPlayingState } from '../hooks/useNowPlaying';
 
 const TICKET_FULL_HEIGHT = 96; // px — tinggi tiket saat tercetak penuh
@@ -39,6 +40,7 @@ export default function NowPlayingScreen({
    *  kosong, untuk menunjukkan bahwa Scrola tetap bekerja mengamati di latar. */
   current?: NowPlayingState | null;
 }) {
+  const { t } = useI18n();
   const player = usePlayer();
   const [showEditor, setShowEditor] = useState(false);
   const [tearing, setTearing] = useState(false);
@@ -161,7 +163,7 @@ export default function NowPlayingScreen({
                 aria-hidden="true"
               />
               <span className="font-mono text-[10px] tracking-[0.25em] text-amber uppercase">
-                Sedang Diamati
+                {t('np.observing')}
               </span>
             </div>
 
@@ -169,7 +171,7 @@ export default function NowPlayingScreen({
               <div className="ticket-perforation shrink-0" aria-hidden="true" />
               <div className="flex-1 py-3.5 px-4 min-w-0">
                 <p className="font-mono text-[10px] tracking-[0.12em] text-muted uppercase truncate">
-                  dari {sourceLabel(externalNowPlaying.packageName)}
+                  {t('np.from', { source: sourceLabel(externalNowPlaying.packageName) })}
                 </p>
                 <h3 className="font-display text-lg font-semibold text-paper mt-1 truncate">
                   {externalNowPlaying.title}
@@ -188,14 +190,14 @@ export default function NowPlayingScreen({
                     </div>
                     <p className="font-mono text-[10px] text-muted mt-1.5">
                       {extProgress >= 1
-                        ? 'sudah memenuhi syarat — tercatat ke Riwayat'
-                        : `tercatat dalam ${formatSec(extRemaining)}`}
+                        ? t('np.eligibleNow')
+                        : t('np.loggedIn', { time: formatSec(extRemaining) })}
                     </p>
                   </>
                 )}
                 {extThreshold === 0 && (
                   <p className="font-mono text-[10px] text-muted mt-2.5">
-                    terlalu pendek untuk dicatat
+                    {t('np.tooShort')}
                   </p>
                 )}
               </div>
@@ -203,14 +205,14 @@ export default function NowPlayingScreen({
           </div>
         ) : (
           <>
-            <p className="font-display text-2xl text-paper mb-2">Belum ada cerita</p>
+            <p className="font-display text-2xl text-paper mb-2">{t('np.empty.title')}</p>
             <p className="text-muted text-sm max-w-xs mb-2">
-              Putar lagu dari aplikasi musik apa pun — Scrola akan mencatatnya. Atau putar langsung
-              di sini untuk melihat tiketnya tercetak.
+              {t('np.empty.body')}
             </p>
             <p className="text-muted/70 text-xs max-w-xs mb-6">
-              Belum ada aplikasi musik lain yang terdeteksi. Kalau kamu sedang memutar musik di app
-              lain, pastikan <span className="text-paper">Akses notifikasi</span> aktif di tab Atur.
+              {t('np.empty.noOtherPre')}
+              <span className="text-paper">{t('np.notifAccess')}</span>
+              {t('np.empty.noOtherPost')}
             </p>
           </>
         )}
@@ -220,13 +222,13 @@ export default function NowPlayingScreen({
           disabled={player.loading}
           className="bg-amber text-ink font-body font-semibold rounded-lg py-4 px-6 disabled:opacity-60 active:scale-[0.98] transition-transform"
         >
-          {player.loading ? 'Membuka...' : 'Pilih Lagu dari Perangkat'}
+          {player.loading ? t('np.opening') : t('np.pickSong')}
         </button>
         <button
           onClick={() => setShowEditor(true)}
           className="text-muted text-sm font-mono mt-6 underline underline-offset-4"
         >
-          atau edit metadata MP3
+          {t('np.orEditMp3')}
         </button>
         {showEditor && <EditMetadataScreen onClose={() => setShowEditor(false)} />}
       </div>
@@ -254,11 +256,11 @@ export default function NowPlayingScreen({
       await SharePlugin.shareImage({
         base64,
         filename: 'scrola-tiket.png',
-        title: 'Bagikan tiket',
+        title: t('np.share.title'),
       });
     } catch (e) {
       console.warn('Gagal membagikan tiket:', e);
-      setShareError('Gagal menyiapkan gambar. Coba lagi.');
+      setShareError('common.shareImageError');
       setTimeout(() => setShareError(null), 3000);
     } finally {
       sharingRef.current = false;
@@ -269,7 +271,7 @@ export default function NowPlayingScreen({
   return (
     <div className="min-h-screen px-6 pt-9 pb-24 flex flex-col items-center overflow-hidden">
       <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase mb-6 text-center">
-        Sedang Ditulis
+        {t('np.writing')}
       </p>
 
       {/* Disc vinyl 190px — berputar selagi playing, berhenti saat pause */}
@@ -300,7 +302,7 @@ export default function NowPlayingScreen({
         <button
           onClick={() => setShowEditor(true)}
           className="text-muted shrink-0"
-          aria-label="Edit metadata lagu ini"
+          aria-label={t('np.aria.editMeta')}
         >
           ✎
         </button>
@@ -325,7 +327,7 @@ export default function NowPlayingScreen({
         <button
           onClick={() => player.seekTo(Math.max(0, (player.state?.positionMs ?? 0) - 10000))}
           className="w-14 h-14 rounded-full bg-surface border border-white/5 text-muted font-mono text-[13px] active:scale-95 transition-transform"
-          aria-label="Mundur 10 detik"
+          aria-label={t('np.aria.back10')}
         >
           −10s
         </button>
@@ -333,14 +335,14 @@ export default function NowPlayingScreen({
           onClick={isPlaying ? player.pause : player.resume}
           className="w-[72px] h-[72px] rounded-full bg-amber text-ink flex items-center justify-center text-[26px] active:scale-95 transition-transform"
           style={{ boxShadow: '0 8px 24px rgba(214,167,86,0.35)' }}
-          aria-label={isPlaying ? 'Jeda' : 'Putar'}
+          aria-label={isPlaying ? t('np.aria.pause') : t('np.aria.play')}
         >
           {isPlaying ? '⏸' : '▶'}
         </button>
         <button
           onClick={() => player.seekTo((player.state?.positionMs ?? 0) + 10000)}
           className="w-14 h-14 rounded-full bg-surface border border-white/5 text-muted font-mono text-[13px] active:scale-95 transition-transform"
-          aria-label="Maju 10 detik"
+          aria-label={t('np.aria.fwd10')}
         >
           +10s
         </button>
@@ -367,23 +369,23 @@ export default function NowPlayingScreen({
           timestamp={new Date()}
           variant="printing"
           tearing={tearing}
-          printLabel={scrobbled ? 'Tercatat ✓' : 'Mencetak…'}
+          printLabel={scrobbled ? t('np.ticket.recorded') : t('np.ticket.printing')}
           printMeta={`${formatSec(positionSec)} / ${formatSec(durationSec)}`}
         />
       </div>
 
       <div className="w-[82%] flex justify-between items-center mt-2.5">
         <span className="font-mono text-[11px] text-muted">
-          tercetak {Math.round(printProgress * 100)}%
+          {t('np.printedPct', { pct: Math.round(printProgress * 100) })}
         </span>
         <span className={`font-mono text-[11px] ${willScrobble ? 'text-amber' : 'text-muted'}`}>
           {!willScrobble
-            ? 'metadata belum jelas — edit tag dulu'
+            ? t('np.status.metaUnclear')
             : scrobbled
-            ? 'tersimpan di Riwayat'
+            ? t('np.status.savedHistory')
             : thresholdSec > 0
-            ? `scrobble pada ${formatSec(Math.ceil(thresholdSec))}`
-            : 'terlalu pendek untuk dicatat'}
+            ? t('np.status.scrobbleAt', { time: formatSec(Math.ceil(thresholdSec)) })
+            : t('np.tooShort')}
         </span>
       </div>
 
@@ -397,10 +399,10 @@ export default function NowPlayingScreen({
           className={`flex items-center gap-2 rounded-full py-2.5 px-5 text-[13px] font-medium active:scale-[0.98] transition-transform border ${
             hasNote(noteDraft) ? 'border-amber bg-amber/10 text-amber' : 'border-amber/35 text-amber'
           }`}
-          aria-label="Tulis catatan untuk lagu ini"
+          aria-label={t('np.aria.writeNote')}
         >
           <span aria-hidden="true">✎</span>
-          {hasNote(noteDraft) ? 'Catatan tersimpan' : 'Tulis catatan'}
+          {hasNote(noteDraft) ? t('np.noteSaved') : t('np.writeNote')}
         </button>
 
         {/* Bagikan tiket sebagai gambar — untuk Status WhatsApp / Story Instagram.
@@ -409,13 +411,13 @@ export default function NowPlayingScreen({
           onClick={handleShare}
           disabled={sharing}
           className="flex items-center gap-2 border border-amber/35 text-amber rounded-full py-2.5 px-5 text-[13px] font-medium active:scale-[0.98] transition-transform disabled:opacity-50"
-          aria-label="Bagikan tiket lagu ini sebagai gambar"
+          aria-label={t('np.aria.share')}
         >
           <span aria-hidden="true">↗</span>
-          {sharing ? 'Menyiapkan…' : 'Bagikan'}
+          {sharing ? t('ticket.preparing') : t('ticket.share')}
         </button>
       </div>
-      {shareError && <p className="text-coral text-xs mt-2">{shareError}</p>}
+      {shareError && <p className="text-coral text-xs mt-2">{t(shareError)}</p>}
 
       {noteOpen && player.track && (
         <NoteEditor
@@ -447,7 +449,7 @@ export default function NowPlayingScreen({
           style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.5)' }}
         >
           <span className="text-amber text-[13px]">✓</span>
-          <span className="text-paper text-[13px] font-medium">Tiket tercatat ke Riwayat</span>
+          <span className="text-paper text-[13px] font-medium">{t('np.toast.recorded')}</span>
         </div>
       </div>
 

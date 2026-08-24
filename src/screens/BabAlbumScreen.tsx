@@ -10,6 +10,7 @@ import {
   startOfYear,
   type NarrativePeriodStats,
 } from '../lib/babAlbumLogic';
+import { useI18n } from '../lib/i18nContext';
 
 /**
  * BabAlbumScreen — rekap naratif jangka panjang: "Bab" (bulan) & "Album" (tahun).
@@ -23,12 +24,6 @@ import {
  */
 
 type Period = 'bulan' | 'tahun';
-
-const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-const MONTH_LONG = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-];
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -64,9 +59,10 @@ function useCountUp(target: number, active: boolean): number {
 }
 
 export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t, tp, n, month, locale } = useI18n();
   const [period, setPeriod] = useState<Period>('bulan');
   const [stats, setStats] = useState<NarrativePeriodStats | null>(null);
-  const [monthName, setMonthName] = useState('');
+  const [monthIndex, setMonthIndex] = useState(-1);
   const [yearLabel, setYearLabel] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -101,7 +97,7 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
           const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
           startSec = Math.floor(start.getTime() / 1000);
           endSec = Math.floor(end.getTime() / 1000);
-          setMonthName(MONTH_LONG[start.getMonth()]);
+          setMonthIndex(start.getMonth());
           setYearLabel(String(start.getFullYear()));
         } else {
           const start = startOfYear(now);
@@ -145,21 +141,24 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
 
   if (!open) return null;
 
-  const eyebrow = period === 'bulan' ? 'Bab' : 'Album';
+  const monthName = monthIndex >= 0 ? month(monthIndex, 'long') : '';
+  const eyebrow = period === 'bulan' ? t('bab.eyebrow.month') : t('bab.eyebrow.year');
   const periodTitle = period === 'bulan' ? `${monthName} ${yearLabel}` : yearLabel;
-  const periodNoun = period === 'bulan' ? 'bulan' : 'tahun';
+  const periodNoun = period === 'bulan' ? t('bab.noun.month') : t('bab.noun.year');
 
   const buckets = stats?.buckets ?? [];
   const peak = peakBucket(buckets);
   const maxBucket = Math.max(1, ...buckets);
   const bucketInitials =
-    period === 'bulan' ? ['P1', 'P2', 'P3', 'P4', 'P5'] : MONTH_SHORT.map((m) => m[0]);
+    period === 'bulan'
+      ? [1, 2, 3, 4, 5].map((k) => t('bab.week.short', { n: k }))
+      : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((i) => month(i, 'short')[0]);
   const peakName =
     peak.index < 0
       ? ''
       : period === 'bulan'
-        ? `Pekan ke-${peak.index + 1}`
-        : MONTH_LONG[peak.index];
+        ? t('bab.week.ordinal', { n: peak.index + 1 })
+        : month(peak.index, 'long');
 
   // Entrance bertahap: tiap blok muncul sedikit lebih lambat. Dinonaktifkan saat reduce-motion.
   const step = prefersReducedMotion() ? 0 : 1;
@@ -174,8 +173,8 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
       <div className="relative px-7 pt-10 pb-16 min-h-full">
         <div className="flex justify-between items-center">
           <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase">{eyebrow}</p>
-          <button onClick={onClose} className="text-muted text-[13px]" aria-label="Tutup rekap">
-            Tutup
+          <button onClick={onClose} className="text-muted text-[13px]" aria-label={t('bab.aria.close')}>
+            {t('common.close')}
           </button>
         </div>
 
@@ -196,21 +195,21 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
                   : 'bg-surfaceRaised text-muted border border-white/5')
               }
             >
-              {p === 'bulan' ? 'Bulan' : 'Tahun'}
+              {p === 'bulan' ? t('bab.toggle.month') : t('bab.toggle.year')}
             </button>
           ))}
         </div>
 
-        {loading && <p className="text-muted text-sm mt-10">Menyusun ceritamu…</p>}
+        {loading && <p className="text-muted text-sm mt-10">{t('sisib.loading')}</p>}
         {error && (
-          <p className="text-coral text-sm mt-10">Rekap tidak terbaca. Coba tutup lalu buka lagi.</p>
+          <p className="text-coral text-sm mt-10">{t('bab.error')}</p>
         )}
 
         {!loading && !error && stats && total === 0 && (
           <div className="py-20 text-center">
-            <p className="font-display text-2xl text-paper mb-2">Halaman ini masih kosong</p>
+            <p className="font-display text-2xl text-paper mb-2">{t('bab.empty.title')}</p>
             <p className="text-muted text-sm max-w-xs mx-auto">
-              Putar lagu, dan {periodNoun} ini akan menulis ceritanya sendiri.
+              {t('bab.empty.body', { period: periodNoun })}
             </p>
           </div>
         )}
@@ -220,18 +219,21 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
             {/* HERO NARATIF — kalimat pembuka, angka besar teranyam (bukan angka telanjang) */}
             <div style={revealStyle(0)}>
               <p className="font-display text-[22px] leading-snug text-paper">
-                {period === 'bulan' ? `Bulan ${monthName}, kamu memutar` : `Sepanjang ${yearLabel}, kamu memutar`}{' '}
-                <span className="text-amber font-semibold">{countedTotal.toLocaleString('id-ID')} lagu</span>.
+                {period === 'bulan'
+                  ? t('bab.hero.monthPre', { month: monthName })
+                  : t('bab.hero.yearPre', { year: yearLabel })}
+                <span className="text-amber font-semibold">
+                  {tp('count.tracks', countedTotal, { count: n(countedTotal) })}
+                </span>
+                {t('bab.hero.post')}
               </p>
               <p className="text-muted text-sm mt-2 leading-relaxed">
-                Dari {stats.totalArtists.toLocaleString('id-ID')} artis
-                {stats.newArtistCount > 0 && (
-                  <>
-                    {' '}— <span className="text-paper">{stats.newArtistCount}</span> di antaranya baru
-                    pertama kamu dengar
-                  </>
-                )}
-                {stats.totalDurationSec > 0 && `. Total ${formatDurationHuman(stats.totalDurationSec)} mendengar`}.
+                {tp('bab.subtitle.fromArtists', stats.totalArtists, { count: n(stats.totalArtists) })}
+                {stats.newArtistCount > 0 &&
+                  tp('bab.subtitle.new', stats.newArtistCount, { count: n(stats.newArtistCount) })}
+                {stats.totalDurationSec > 0 &&
+                  t('bab.subtitle.duration', { duration: formatDurationHuman(stats.totalDurationSec, locale) })}
+                {t('bab.subtitle.post')}
               </p>
             </div>
 
@@ -244,13 +246,13 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
                 <div className="ticket-perforation shrink-0" aria-hidden="true" />
                 <div className="flex-1 py-3.5 px-4 min-w-0">
                   <p className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase">
-                    Lagu yang paling sering diputar
+                    {t('bab.topTrack.label')}
                   </p>
                   <h3 className="font-display text-[19px] font-semibold text-paper mt-1 truncate">
                     {stats.topTrack.track}
                   </h3>
                   <p className="text-[13px] text-muted truncate">
-                    {stats.topTrack.artist} · {stats.topTrack.playCount}× diputar
+                    {stats.topTrack.artist} · {t('stats.plays', { count: stats.topTrack.playCount })}
                   </p>
                 </div>
               </div>
@@ -263,14 +265,14 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
                 className="bg-surface border border-white/5 rounded-[10px] py-3.5 px-4"
               >
                 <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-                  Artis yang paling sering kamu putar
+                  {t('bab.topArtist.label')}
                 </p>
                 <div className="flex items-baseline justify-between gap-3 mt-1">
                   <h3 className="font-display text-[19px] font-semibold text-paper truncate">
                     {stats.topArtist}
                   </h3>
                   <span className="font-mono text-xs text-amber whitespace-nowrap">
-                    {stats.topArtistPlayCount}× diputar
+                    {t('stats.plays', { count: stats.topArtistPlayCount })}
                   </span>
                 </div>
               </div>
@@ -278,10 +280,10 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
 
             {/* Kapan kamu mendengar — grafik dijelaskan gamblang, puncak dinamai */}
             <div style={revealStyle(3)} className="bg-surface border border-white/5 rounded-[10px] py-4 px-4">
-              <p className="font-display text-base font-semibold text-paper">Kapan kamu mendengar</p>
+              <p className="font-display text-base font-semibold text-paper">{t('bab.when.title')}</p>
               {peakName && (
                 <p className="text-[13px] text-muted mt-0.5">
-                  Paling ramai di <span className="text-amber">{peakName}</span> — {peak.count.toLocaleString('id-ID')} lagu.
+                  {t('bab.when.peak', { peak: peakName, count: n(peak.count) })}
                 </p>
               )}
               <div className="flex items-end gap-1.5 h-20 mt-4">
@@ -295,7 +297,7 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
                           height: reveal ? `${Math.max((count / maxBucket) * 100, 4)}%` : '4%',
                           transition: `height 0.6s cubic-bezier(0.22,1,0.36,1) ${(0.3 + i * 0.04) * step}s`,
                         }}
-                        aria-label={`${bucketInitials[i]}: ${count} lagu`}
+                        aria-label={t('bab.aria.bar', { label: bucketInitials[i], count })}
                       />
                     </div>
                     <span
@@ -309,7 +311,9 @@ export default function BabAlbumScreen({ open, onClose }: { open: boolean; onClo
                 ))}
               </div>
               <p className="text-[11px] text-muted mt-3">
-                Tiap batang satu {period === 'bulan' ? 'pekan' : 'bulan'} · makin tinggi, makin banyak lagu.
+                {t('bab.when.legend', {
+                  unit: period === 'bulan' ? t('bab.when.unit.month') : t('bab.when.unit.year'),
+                })}
               </p>
             </div>
           </div>

@@ -9,6 +9,8 @@
  * menyisipkan baris yang hilang), tidak pernah mengosongkan/menimpa catatan lokal atau meng-unfavorite.
  */
 
+import { AppError } from './appError';
+
 export const BACKUP_VERSION = 1;
 const BACKUP_TYPE = 'scrola-backup';
 
@@ -81,20 +83,20 @@ export function parseBackup(json: string): ParsedBackup {
   try {
     obj = JSON.parse(json);
   } catch {
-    throw new Error('File bukan JSON yang valid.');
+    throw new AppError('err.backup.notJson');
   }
   if (!obj || obj.type !== BACKUP_TYPE) {
-    throw new Error('File ini bukan backup Scrola.');
+    throw new AppError('err.backup.notScrola');
   }
   if (obj.version !== BACKUP_VERSION) {
-    throw new Error(`Versi backup ${obj.version} tidak didukung (aplikasi memakai v${BACKUP_VERSION}).`);
+    throw new AppError('err.backup.unsupportedVersion', { version: obj.version, appVersion: BACKUP_VERSION });
   }
   if (!Array.isArray(obj.history)) {
-    throw new Error('Backup rusak: daftar riwayat tidak ditemukan.');
+    throw new AppError('err.backup.corruptNoHistory');
   }
   const rows: BackupHistoryRow[] = obj.history.map((r: any, i: number) => {
     if (!hasText(r?.artist) || !hasText(r?.track) || typeof r?.timestamp !== 'number') {
-      throw new Error(`Backup rusak: baris ke-${i + 1} tidak punya artist/track/timestamp yang sah.`);
+      throw new AppError('err.backup.corruptRow', { row: i + 1 });
     }
     return {
       artist: r.artist,

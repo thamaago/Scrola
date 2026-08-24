@@ -1,15 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { useMp3Editor, type EditableFields } from '../hooks/useMp3Editor';
+import { useI18n } from '../lib/i18nContext';
 
-const FIELD_LABELS: { key: keyof EditableFields; label: string; placeholder: string }[] = [
-  { key: 'title', label: 'Judul', placeholder: 'Nama lagu' },
-  { key: 'artist', label: 'Artist', placeholder: 'Nama penyanyi/band' },
-  { key: 'album', label: 'Album', placeholder: 'Nama album' },
-  { key: 'albumArtist', label: 'Album Artist', placeholder: 'Biasanya sama seperti Artist' },
-  { key: 'year', label: 'Tahun', placeholder: '2024' },
-  { key: 'genre', label: 'Genre', placeholder: 'Mis. Indie, Jazz, Lo-fi' },
-];
+// Urutan field editor. Label & placeholder diambil dari kamus: edit.field.<key> / edit.field.<key>.ph
+const FIELD_KEYS: (keyof EditableFields)[] = ['title', 'artist', 'album', 'albumArtist', 'year', 'genre'];
 
 /**
  * EditMetadataScreen
@@ -32,6 +27,7 @@ export default function EditMetadataScreen({
   onSaved?: (result: { uri: string; title: string; artist: string; albumArt: string | null }) => void;
   initialUri?: string;
 }) {
+  const { t } = useI18n();
   const editor = useMp3Editor();
 
   // Kalau dibuka dari lagu yang sedang diputar (initialUri diberikan), langsung muat file itu —
@@ -78,34 +74,27 @@ export default function EditMetadataScreen({
       <div className="px-5 pt-8 pb-10">
         <div className="flex items-center justify-between mb-6">
           <button onClick={onClose} disabled={editor.saving} className="text-muted text-sm disabled:opacity-40">
-            Batal
+            {t('common.cancel')}
           </button>
           <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase">
-            Tulis Ulang Cerita
+            {t('edit.eyebrow')}
           </p>
           <div style={{ width: 40 }} />
         </div>
 
         {!editor.current ? (
           <div className="flex flex-col items-center justify-center text-center px-4" style={{ minHeight: '60vh' }}>
-            <p className="font-display text-xl text-paper mb-2">Pilih file MP3</p>
-            <p className="text-muted text-sm max-w-xs mb-6">
-              Pilih file MP3 dari perangkatmu untuk mengubah judul, artist, album, atau
-              sampul albumnya.
-            </p>
-            <p className="text-muted/70 text-xs max-w-xs mb-6 leading-relaxed">
-              Hanya berlaku untuk file MP3 yang tersimpan di perangkatmu — lagu yang diputar
-              dari Spotify/YouTube Music dan sejenisnya tidak bisa diedit dari sini karena itu
-              audio streaming, bukan file yang dimiliki Scrola.
-            </p>
+            <p className="font-display text-xl text-paper mb-2">{t('edit.pick.title')}</p>
+            <p className="text-muted text-sm max-w-xs mb-6">{t('edit.pick.body')}</p>
+            <p className="text-muted/70 text-xs max-w-xs mb-6 leading-relaxed">{t('edit.pick.note')}</p>
             <button
               onClick={editor.pickFile}
               disabled={editor.loading}
               className="bg-amber text-ink font-body font-semibold rounded-lg py-3 px-6 disabled:opacity-60"
             >
-              {editor.loading ? 'Membaca file...' : 'Pilih File MP3'}
+              {editor.loading ? t('edit.reading') : t('edit.pickFile')}
             </button>
-            {editor.error && <p className="text-coral text-sm mt-4">{editor.error}</p>}
+            {editor.error && <p className="text-coral text-sm mt-4">{t(editor.error)}</p>}
           </div>
         ) : (
           <>
@@ -120,26 +109,26 @@ export default function EditMetadataScreen({
               </div>
               <div className="flex gap-4">
                 <button onClick={editor.pickNewAlbumArt} className="text-amber text-sm font-medium">
-                  Ganti Sampul
+                  {t('edit.changeArt')}
                 </button>
                 {editor.displayedAlbumArt && (
                   <button onClick={editor.removeAlbumArt} className="text-coral text-sm font-medium">
-                    Hapus Sampul
+                    {t('edit.removeArt')}
                   </button>
                 )}
               </div>
             </div>
 
             <div className="flex flex-col gap-4">
-              {FIELD_LABELS.map(({ key, label, placeholder }) => (
+              {FIELD_KEYS.map((key) => (
                 <div key={key}>
                   <label className="font-mono text-[10px] tracking-widest text-muted uppercase mb-1.5 block">
-                    {label}
+                    {t(`edit.field.${key}`)}
                   </label>
                   <input
                     value={editor.fields?.[key] ?? ''}
                     onChange={(e) => editor.updateField(key, e.target.value)}
-                    placeholder={placeholder}
+                    placeholder={t(`edit.field.${key}.ph`)}
                     className="w-full bg-surface text-paper rounded-md px-3.5 py-3 text-sm
                                border border-white/5 focus:border-amber/50 outline-none
                                placeholder:text-muted/60"
@@ -148,17 +137,17 @@ export default function EditMetadataScreen({
               ))}
             </div>
 
-            {editor.error && <p className="text-coral text-sm mt-4">{editor.error}</p>}
+            {editor.error && <p className="text-coral text-sm mt-4">{t(editor.error)}</p>}
 
             <button
               onClick={handleSave}
               disabled={editor.saving}
               className="w-full bg-amber text-ink font-body font-semibold rounded-lg py-3.5 mt-8 disabled:opacity-60"
             >
-              {editor.saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+              {editor.saving ? t('edit.saving') : t('edit.saveChanges')}
             </button>
             <p className="text-muted text-xs text-center mt-3 leading-relaxed">
-              Perubahan langsung ditulis ke file aslinya di perangkatmu.
+              {t('edit.saveNote')}
             </p>
           </>
         )}

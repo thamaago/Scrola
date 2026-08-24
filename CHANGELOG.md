@@ -17,6 +17,244 @@ tooling).
 
 ## [Unreleased]
 
+### Internal — verifikasi kelengkapan i18n (8 bahasa benar-benar utuh)
+Menambah `i18nCompleteness.test.ts` sebagai penjaga permanen bahwa SETIAP bahasa terimplementasi
+penuh — bukan sekadar "test lain hijau". Empat lapis pemeriksaan:
+- **Registrasi konsisten:** tiap locale di `LOCALES` punya tag BCP-47 valid, kamus terisi (>250 kunci),
+  kategori jamak dideklarasikan, dan `pluralCategory` selalu menghasilkan kategori yang dideklarasikan
+  (dicek untuk n = 0,1,2,5,11,21,22,100).
+- **Paritas kunci penuh:** ke-8 locale menutup basis id tanpa kunci hilang/asing (via audit).
+- **Paritas PLACEHOLDER:** tiap terjemahan memakai persis `{param}` yang sama dengan basis — menangkap
+  `{count}` yang hilang atau typo (`{cont}`) yang tak terdeteksi audit. **0 ketidakcocokan** di 8 bahasa.
+- **Deteksi teks tertinggal:** tak ada nilai non-id yang identik dengan Indonesia sambil mengandung
+  huruf (kecuali istilah serumpun: Album/Artist/Genre/Scrobble/Serial). Membuktikan tak ada kalimat
+  Indonesia yang lupa diterjemahkan.
+- Dikonfirmasi juga: **tak ada string hardcoded** tersisa di layar/komponen (semua lewat `t()`), dan
+  teks gambar-bagikan Canvas semuanya lewat `tActive` (hanya glyph '♪' yang literal).
+- Hasil: `npm test` **337 hijau**, `tsc` 0, `vite build` sukses. Semua 8 bahasa lolos keempat lapis.
+- **Yang MASIH belum "selesai" (jujur):** (a) mutu terjemahan pt/de/fr/ru/ja/es = AI, belum ditinjau
+  penutur asli; (b) belum tervalidasi di device (Gradle/CI + HP fisik, termasuk render Kiril/CJK di
+  Canvas & kelengkapan data ICU per-locale). Utuh secara STRUKTUR & CAKUPAN — belum secara mutu-native
+  & device.
+
+### Added — bahasa ke-8: Español (Spanyol) — jangkauan terluas (LatAm + Spanyol)
+- **Spanyol (`es`)** ditambahkan penuh. Bukan tantangan struktur baru (jamak one/other seperti en),
+  melainkan **jangkauan maksimum**: Spanyol + seluruh Amerika Latin (Meksiko, Argentina, Chile, dll —
+  banyak pasar Last.fm besar). Dengan Inggris+Spanyol+Portugis(BR), Scrola kini menutup mayoritas
+  pengguna Last.fm Amerika.
+- **BCP-47 `es-419`** (Spanyol Amerika Latin) dipilih, bukan `es-ES` — memakai pemisah ribuan koma
+  ("1,234,567") yang mewakili audiens Spanyol terbesar; kosakata netral-LatAm ("entrada" untuk tiket).
+- Registrasi `i18n.ts`; kamus `locales/es.ts` **paritas 100% dengan id** (audit). Tanggal via Intl
+  ("mayo"、"lun"、"9 may 2024"). Trato informal ("tú").
+- **Review 5 putaran (ringkas):** korektnes — audit paritas 8 locale + integrasi es (jamak one/other,
+  durasi, `resolveLocale('es-419'/'es-MX')`); state — nihil; error — semua `err.*` es; WebView — Intl
+  `es-419` (perlu validasi ICU device); aman — nihil.
+- Terjemahan AI berkualitas tinggi, belum ditinjau penutur asli.
+- `npm test` hijau (**333**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — bahasa ke-7: 日本語 (Jepang) — aksara CJK + kalimat verba-akhir (SOV)
+- **Jepang (`ja`)** ditambahkan penuh. Jepang pasar Last.fm yang cukup besar; membawa dua tantangan
+  baru sekaligus: **aksara CJK** (Kanji/Hiragana/Katakana) dan **tata kalimat SOV** (verba di akhir).
+- **Jepang TANPA infleksi jamak** — satu bentuk saja (`other`), persis seperti Indonesia. Membuktikan
+  infra jamak menampung rentang penuh: 1-bentuk (id/ja) · 2-bentuk (en/de/pt/fr) · 3-bentuk (ru).
+  `PLURAL_RULES.ja = () => 'other'`. "1曲"/"5曲" bentuknya sama.
+- **Perbaikan arsitektur untuk penutup kalimat CJK:** subtitle Bab/Album dulu memaku "." di JSX.
+  Ditambah kunci `bab.subtitle.post` (Latin = "."; ja = "。") — sejajar dengan `bab.hero.post` (de/ja).
+  Kini kalimat Jepang berakhir dengan「。」yang benar. Hero verba-akhir juga alami:
+  「5月は、」+「210曲」+「を再生しました。」.
+- Registrasi `i18n.ts` + BCP-47 `ja-JP`; kamus `locales/ja.ts` **paritas 100% dengan id** (audit).
+  Angka/tanggal `ja-JP` via Intl ("1,234,567"、"5月"、曜日 "月火水…"、"2024年5月9日")；`hg.monthYear`
+  di-override jadi urutan "{year}年{month}".
+- **Review 5 putaran (ringkas):** korektnes — audit paritas 7 locale + integrasi ja (satu-bentuk,
+  verba-akhir, `resolveLocale('ja-JP')`); state — tak ada; error — semua `err.*` ja; WebView — Intl
+  `ja-JP` + render glyph CJK di Canvas perlu font fallback sistem (WAJIB validasi device); aman — nihil.
+- **Batas jujur ja:** (a) terjemahan AI, belum ditinjau penutur asli; (b) render teks CJK pada
+  GAMBAR-bagikan (Canvas) bergantung font CJK sistem — bisa jadi kotak-tofu jika absen (perlu cek HP);
+  (c) label sumbu sparkline mode "tahun" memakai huruf pertama nama bulan — untuk ja jadi digit (Okt/Nov/
+  Des → "1") — masalah kosmetik lama yang tak khusus ja, dicatat untuk perbaikan terpisah.
+- `npm test` hijau (**330**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — bahasa ke-6: Русский (Rusia) — aksara Kiril + jamak TIGA bentuk (one/few/many)
+- **Rusia (`ru`)** ditambahkan penuh. Komunitas Last.fm Rusia secara historis sangat besar.
+  Lompatan teknis terbesar: aksara **Kiril** + **jamak 3-bentuk** (sebelumnya semua locale cuma 2).
+- **Bukti infra jamak benar-benar skalabel:** aturan Rusia (CLDR) memakai `one`/`few`/`many` —
+  1 трек, 2 трека, 5 треков, 21 трек, 22 трека, 25 треков, 11 треков. Ditambahkan
+  `LOCALE_PLURAL_CATEGORIES.ru = ['one','few','many']` + fungsi aturan `%10`/`%100`. `translatePlural`
+  yang sudah ada menanganinya **tanpa perubahan** — hanya butuh 3 kunci per grup jamak di kamus.
+  Test audit otomatis MEMAKSA ketiga bentuk ada untuk setiap grup (10 grup × 3 = 30 bentuk).
+- Registrasi `i18n.ts` + BCP-47 `ru-RU`; kamus `locales/ru.ts` **paritas 100% dengan id** (audit).
+  Angka/tanggal `ru-RU` via Intl ("1 234 567", "май", "пн").
+- **Kehati-hatian tata bahasa Rusia:** di mana kala lampau akan memaksa gender ("ты открыл/открыла"),
+  dipakai konstruksi impersonal netral ("Найдено {count} исполнителей") supaya tak berasumsi gender
+  pengguna. Sisa kala-lampau langka ditandai "(а)" (mis. "включил(а)").
+- **Review 5 putaran (ringkas):** korektnes — audit paritas 6 locale hijau + integrasi ru (one/few/many
+  utk 1/2/4/5/11/21/22/25, durasi, `resolveLocale('ru-RU')`); state — tak ada; error — semua `err.*`
+  ru; WebView — Intl `ru-RU` (perlu validasi ICU device); aman — tanpa perubahan izin/rahasia.
+- **Catatan mutu terjemahan:** kamus non-id/en (pt/de/fr/ru) dihasilkan AI berkualitas tinggi tapi
+  **belum ditinjau penutur asli** — Rusia paling perlu proofread karena tata bahasanya kompleks. Ini
+  bukan "selesai" sampai ditinjau + divalidasi device.
+- `npm test` hijau (**325**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — bahasa ke-5: Français (Prancis) — aturan jamak berbeda (0 = tunggal)
+- **Prancis (`fr`)** ditambahkan penuh. Prancis pasar musik/Last.fm besar Eropa Barat berikutnya
+  setelah Jerman; bahasa Prancis juga berjangkauan luas (Prancis, Belgia, Swiss, Kanada-Québec, Afrika
+  frankofon). Catatan jujur: peringkat trafik Last.fm #6+ di balik paywall Similarweb, jadi Prancis
+  dipilih sebagai pasar Eropa besar berikutnya yang andal (bukan angka pasti).
+- Registrasi `i18n.ts` + BCP-47 `fr-FR`; kamus `locales/fr.ts` **paritas 100% dengan id** (audit).
+  Angka/tanggal `fr-FR` via Intl (mis. "1 234 567", "mai", "lun.").
+- **Menguji fleksibilitas pluralisasi:** aturan jamak Prancis berbeda dari en/de/pt — **0 DAN 1
+  keduanya tunggal** ("0 chanson", "1 chanson", "2 chansons"). Diterapkan `fr: n<2 ? 'one':'other'`
+  (sesuai CLDR fr) & diverifikasi test. Infra lama menampungnya tanpa perubahan struktural.
+- Detail Prancis via kunci sendiri: genderisasi artikel di `bab.noun` ("ce mois"/"cette année"),
+  `stats.plays` netral-gender ("{count} écoutes"), tutoiement ("tu") konsisten.
+- **Test baseline diperbarui:** `resolveLocale` dulu memakai `'fr'` sebagai contoh "tak dikenal";
+  karena fr kini didukung, contohnya diganti `'zz'` (kode yang memang tak akan pernah nyata).
+- **Review 5 putaran (ringkas):** korektnes — audit paritas 5 locale hijau + integrasi fr (termasuk
+  0→tunggal, durasi, `resolveLocale('fr-FR')`); state — tak ada; error — semua `err.*` fr; WebView —
+  Intl `fr-FR` (perlu validasi ICU device); aman — tanpa perubahan izin/rahasia.
+- `npm test` hijau (**321**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — bahasa ke-4: Deutsch (Jerman) — pasar Last.fm berikutnya setelah Brasil
+- **Jerman (`de`)** ditambahkan penuh. Dasar: Jerman #4 trafik Last.fm (~5,9%, Similarweb Jan 2026),
+  pasar bahasa-baru berikutnya setelah AS/UK/Kanada (Inggris) & Brasil (pt).
+- Registrasi `i18n.ts` + BCP-47 `de-DE`; kamus `locales/de.ts` **paritas 100% dengan id** (dijamin
+  audit). Angka/tanggal `de-DE` via Intl (mis. "1.234.567,5", "Mai", "Mo").
+- **Perbaikan arsitektur untuk bahasa verba-akhir:** hero Bab/Album dulu memaku akhiran "." di JSX,
+  jadi kalimat Jerman ("Im Mai hast du 210 Songs **gespielt**.") — yang verbanya di AKHIR — mustahil
+  benar. Ditambah kunci `bab.hero.post` (id/en/pt = "."; de = " gespielt.") + layar memakainya. Kini
+  pola i18n menampung SOV/verba-akhir tanpa hack. Detail Jerman lain ditangani lewat kunci sendiri:
+  jamak datif "Von {count} Künstlern", artikel bergenre di `bab.noun` ("dieser Monat"/"dieses Jahr"),
+  jamak "Künstler" yang tak berubah.
+- Pemilih bahasa di Ajustes kini bisa **membungkus baris** (`flex-wrap`) karena sudah 4 opsi.
+- **Review 5 putaran (ringkas):** korektnes — audit paritas 4 locale hijau + integrasi de
+  (render/jamak/durasi/verba-akhir/`resolveLocale('de-DE')`); state — hanya `flex-wrap`; error — semua
+  `err.*` de; WebView — Intl `de-DE` (perlu validasi ICU device); aman — tanpa perubahan izin/rahasia.
+- `npm test` hijau (**317**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — bahasa ke-3: Português (Brasil) — pasar scrobbler terbesar di luar Inggris
+- **Portugis Brasil (`pt`)** ditambahkan penuh. Dasar pemilihan: Brasil adalah negara #2 trafik
+  Last.fm (~11%, di bawah AS ~29%, di atas UK ~6% — Similarweb Jan 2026), komunitas non-Inggris
+  terbesar. Membuktikan fondasi i18n benar-benar skalabel: cukup **satu file kamus + 4 baris registrasi**.
+- Registrasi di `i18n.ts` (`LOCALES`/`Locale`/`PLURAL_RULES`/`LOCALE_PLURAL_CATEGORIES`) + tag BCP-47
+  `pt-BR` di `i18nFormat.ts`. Kamus lengkap `locales/pt.ts` — **paritas 100% dengan basis id**
+  (dijamin test audit; tak ada kunci hilang/asing), termasuk bentuk jamak `one/other`.
+- Pemilih bahasa di Ajustes otomatis menampilkan opsi ke-3 ("Português (Brasil)") lewat `LOCALES.map`;
+  deteksi otomatis dari bahasa perangkat (`navigator.language` `pt-BR` → `pt`) juga langsung jalan.
+- Nama bulan/hari, pemisah ribuan, dan tanggal mengikuti `pt-BR` via `Intl` (mis. "1.234.567",
+  "seg./ter./…", "maio"). Istilah domain "scrobble" dipertahankan; metafora tiket → "ingresso".
+- Catatan jamak: pt memakai 1 → tunggal, selain itu → jamak (termasuk "0 músicas") — pilihan pragmatis
+  & alami pt-BR, sedikit beda dari CLDR (yang menaruh 0 di kategori "one").
+- **Review 5 putaran (ringkas):** korektnes — audit paritas 3 locale hijau + test integrasi pt
+  (render/jamak/durasi/`resolveLocale('pt-BR')`); state — tak ada state baru, `LOCALES` menyetir picker
+  & auto-deteksi; error — semua `err.*` diterjemahkan pt; WebView — `Intl pt-BR` (perlu validasi ICU di
+  perangkat); aman — tak ada perubahan izin/rahasia.
+- `npm test` hijau (**313**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — i18n "utuh": pesan error terlokalkan + SETIAP elemen ikut bahasa (crash screen & gambar)
+Melengkapi migrasi i18n: pesan error kini terjemah, dan celah "tidak ikut berganti bahasa" ditutup —
+termasuk layar crash & teks pada gambar-bagikan. Total **303 → 310 test** (7 test baru appError).
+
+- **Cermin locale tingkat-modul** (`getActiveLocale`/`setActiveLocale`/`tActive` di `i18n.ts`) —
+  inti agar KODE NON-REACT ikut bahasa aktif. `I18nProvider` menyinkronkannya sinkron saat render,
+  jadi `ErrorBoundary` (komponen class DI ATAS provider, tak punya context), renderer Canvas, dan
+  penerjemahan error semua memakai bahasa yang sama dengan UI.
+- **Error ditunda terjemahannya sampai titik tampil** (`appError.ts`): kelas `AppError {key, params}`
+  + `toErrDescriptor`/`errText`/`errTextFor`. Prinsip: lib/hook TIDAK lagi menyimpan teks jadi
+  (yang membeku pada bahasa saat error terjadi) — cukup bawa KUNCI; UI menerjemahkan saat render,
+  jadi ganti bahasa saat pesan sedang tampil pun ikut berubah. (`appError.test.ts`)
+  - `useMp3Editor` menyimpan kunci error (`err.mp3.*`), diterjemahkan di EditMetadata.
+  - `parseBackup` melempar `AppError` berkunci (`err.backup.*`, mis. baris rusak bawa nomor baris) →
+    Settings menerjemahkan via `errTextFor`.
+  - Login menyimpan error sebagai deskriptor `{key, params}` (bukan string); sebab teknis jaringan
+    dicatat ke console, ke pengguna tampil pesan bersih terlokalkan (bukan lagi pesan mentah lastfm).
+  - Toast "gagal siapkan gambar" (Now Playing & Sisi B) kini simpan kunci → live-switch.
+- **Layar crash (ErrorBoundary) ikut bahasa** — pakai `tActive('err.boundary.*')`.
+- **Teks pada GAMBAR-bagikan ikut bahasa** (Canvas): zine Sisi B (SISI B/RECAP MINGGUAN/LAGU MINGGU
+  INI/label statistik/nama hari/rentang minggu), kartu Now Playing ("SEDANG DIPUTAR", "TIKET №…"),
+  dan tiket koleksi (label jenis, tanggal, baris "lewat …") — lewat `tActive`/`getActiveLocale()` +
+  `formatMonth`/`formatWeekday`. Nama merek ("Scrola", "Every song leaves a story.") tetap.
+- **Menutup "batas yang diketahui" dari entri sebelumnya:** (a) ErrorBoundary ✔, (b) error hook/lib
+  (mp3, backup) ✔, (c) teks gambar-bagikan ✔. Sisa yang SENGAJA dibiarkan: string yang dilempar di
+  dalam `lastfm.ts` (hanya muncul di diagnostik/console teknis, bukan UI) & invarian internal scrobble.
+- **Review 5 putaran (ringkas):** korektnes — AppError/mirror/parseBackup teruji; state — cermin
+  di-set sinkron & idempotent (aman StrictMode), error tersimpan sbg kunci → live-switch; error —
+  fallback `err.generic`, sebab teknis tetap tercatat; WebView — hanya `Intl` aman + baca dict; aman —
+  parameter error dirender sbg teks (ter-escape / fillText), tanpa rahasia/permission baru.
+- `npm test` hijau (310), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+
+### Added — multibahasa TUNTAS: infra i18n diperkuat + SEMUA layar & komponen dwibahasa
+Melanjutkan fondasi i18n di bawah. Kini seluruh UI benar-benar dwibahasa (id/en), bukan lagi hanya
+tab & label tiket. Semua fungsi baru murni & ber-TDD; total **275 → 303 test** (28 test i18n baru).
+
+- **Infra i18n diperkuat** (semua tanpa library, bundle tetap kecil):
+  - Pluralisasi (`translatePlural`, `pluralCategory`) — konvensi kunci `key.one`/`key.other`. id satu
+    bentuk, en one/other. Aturan ditulis sendiri (bukan `Intl.PluralRules`) agar deterministik lintas
+    WebView. (`i18nPlural.test.ts`)
+  - Format angka & tanggal per-locale via `Intl` bawaan — `i18nFormat.ts`: `formatNumber`, `formatDate`,
+    `formatMonth`, `formatDayMonthYear`, `formatWeekday` (Senin-dulu). Formatter di-cache. SENGAJA tidak
+    memakai `Intl.RelativeTimeFormat` (butuh WebView lebih baru) demi kompatibilitas. (`i18nFormat.test.ts`)
+  - Audit kelengkapan kunci — `i18nAudit.ts`: `auditDictionaries`/`auditLocale`, sadar-jamak. Test
+    menjamin `en` MENUTUPI penuh basis `id` (tak ada kunci hilang / kunci asing) → cegah drift kamus.
+    (`i18nAudit.test.ts`, `i18nIntegration.test.ts`)
+  - `useI18n()` kini mengekspos `t`, `tp` (jamak), `n` (angka), `d` (tanggal), `month`, `weekday`.
+- **Migrasi layar & komponen (bukti-kerja → tuntas):** LoginScreen, HistoryScreen, NowPlayingScreen,
+  PenemuanScreen, SisiBScreen, BabAlbumScreen, EditMetadataScreen, TiketKoleksiScreen, SettingsScreen,
+  serta komponen NoteEditor, StoryTicket, SeekTimeline — semua teks tampil, placeholder, pesan error UI,
+  dan `aria-label`-nya kini lewat `t()`/`tp()`. Kalimat naratif (Sisi B / Bab-Album) & hitungan pakai
+  interpolasi + jamak. Array nama bulan/hari lokal (BULAN/MONTH_SHORT/MONTH_LONG/HARI) DIHAPUS, diganti
+  `formatMonth`/`formatWeekday` (satu sumber, hemat baris).
+- **Lib ikut dilokalkan** (mundur-kompatibel, `locale` default `id` → test & pemanggil lama utuh):
+  `formatDurationHuman(sec, locale)`, `weekRangeLabel(sec, locale)`, dan label pengelompokan riwayat
+  (`groupHistoryByDay`/`groupHistoryByPeriod` — "Hari ini/Kemarin/Minggu ini/Bulan ini/…"). `DayGroup`
+  kini punya flag `isToday` supaya penyorotan UI tak lagi membandingkan string label.
+- **Review 5 putaran (ringkas):**
+  1. *Korektnes:* rantai fallback jamak & audit sadar-jamak diverifikasi via `i18nIntegration.test.ts`
+     (id 1 bentuk; en 1↔banyak beda). `formatMonth`/`formatWeekday` membungkus indeks di luar rentang.
+  2. *State:* nilai context di-`useMemo` pada `[locale]`; ganti bahasa me-render ulang. BabAlbum
+     menyimpan `monthIndex` (bukan nama jadi), jadi nama bulan ikut ganti saat locale berpindah tanpa
+     fetch ulang; SisiB menambah `locale` ke dep efek agar label minggu ikut menyegar.
+  3. *Error:* `translate`/`translatePlural` tak pernah melempar (fallback ke kunci). Formatter Intl
+     di-cache; tak ada promise baru tanpa catch.
+  4. *WebView:* hanya `Intl.NumberFormat`/`DateTimeFormat` (tersedia luas); `RelativeTimeFormat`
+     dihindari. **Perlu validasi device** untuk memastikan data ICU locale `id`/`en` lengkap di WebView.
+  5. *Keamanan:* interpolasi pakai split/join (bukan regex/eval); output dirender React sebagai teks
+     (ter-escape) → nama artis/lagu sebagai parameter aman. Tanpa rahasia/permission baru.
+- **Batas yang diketahui (jujur, belum dikerjakan):** (a) `ErrorBoundary` (layar crash) tetap Indonesia —
+  komponen class & sengaja tak bergantung pada i18n yang bisa jadi justru sumber crash-nya; (b) sebagian
+  pesan error dari hook/lib (`useMp3Editor`, `lastfm.ts`, parser backup) masih Indonesia saat
+  ditampilkan; (c) teks pada GAMBAR-bagikan (zine Sisi B & stub tiket via Canvas) tetap Indonesia —
+  pipeline render terpisah, di luar lingkup migrasi ini.
+- `npm test` hijau (303), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device** (Gradle/CI
+  & HP fisik) sesuai "Definisi Selesai".
+
+### Added — fondasi multibahasa (i18n) ringan: Bahasa Indonesia + English
+- Inti i18n TANPA library (bundle tetap kecil): `i18n.ts` (murni, TDD, **7 test baru**, total **275**)
+  dengan `translate(locale, key, params)` (interpolasi `{x}`, fallback locale→id→kunci) & `resolveLocale`
+  (mis. "en-US"→en). Kamus per-locale di `locales/id.ts` & `locales/en.ts` (id = basis).
+- React: `I18nProvider` + hook `useI18n()` (`t`, `locale`, `setLocale`); membungkus app di main.tsx.
+  Bahasa dideteksi dari perangkat saat pertama, bisa diganti manual, dan **disimpan** (`getSavedLocale`/
+  `setSavedLocale` di preferences, pola SecureStore + cache). Ganti bahasa langsung me-render ulang UI.
+- **Pemilih bahasa di Settings** (Bahasa Indonesia / English). Migrasi bukti-kerja: tab navigasi
+  (Sekarang/Riwayat/Atur), label jenis tiket (Jejak/Penemuan/Setia/Beruntun/Momen), teks "N tiket
+  terkumpul" & tombol Bagikan.
+- tsc 0 error, brace seimbang. **Belum tervalidasi device.** Catatan: ini FONDASI — mayoritas string
+  layar lain masih hardcode Indonesia; dimigrasikan bertahap ke sistem `t()` yang sama (tambah kunci di
+  id.ts lalu terjemahkan di en.ts). Teks gambar-bagikan Canvas & label native belum ikut.
+
+### Added — build terpasang sebagai UPDATE (tanpa uninstall) + log checklist validasi
+- **Terpasang sebagai update, data aman.** Akar masalah "harus uninstall tiap build": CI membuat
+  `android/` via `cap add android` lalu build debug APK yang ditandatangani `~/.android/debug.keystore`
+  yang di-generate ACAK tiap run → tanda tangan beda → Android menolak install di atas versi lama.
+  Kini keystore debug TETAP di-commit (`native-overlay/android/scrola-debug.keystore`, parameter debug
+  standar) dan CI (build.yml & release.yml) menyalinnya ke `~/.android/debug.keystore` sebelum build →
+  semua build ditandatangani sama → APK baru terpasang sebagai **update**, riwayat/tiket/koreksi tak
+  hilang. (Ini keystore DEV, bukan untuk rilis Play Store.)
+- **Log mencatat yang perlu divalidasi.** Saat app dibuka, `logValidationChecklist()` menulis stempel
+  build + daftar item yang belum tervalidasi device ke log peristiwa (`validationChecklist.ts`, murni,
+  **3 test baru**, total **268**). Screenshot log kini bisa ditelusuri ke build & langsung mengingatkan
+  apa yang perlu dicek.
+- tsc 0 error, brace seimbang. **Belum tervalidasi CI/device** (perlu 1x run CI + 1x install).
+
 ### Changed — notifikasi Scrola hilang otomatis saat diam (tak lagi menggantung lagu terakhir)
 - Notifikasi foreground Scrola dulu terus menampilkan lagu TERAKHIR walau tak ada yang diputar (sifat
   media Android: sesi tetap hidup dalam keadaan paused). Kini saat playback dijeda/diam,

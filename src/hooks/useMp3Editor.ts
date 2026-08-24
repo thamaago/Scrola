@@ -16,6 +16,8 @@ export function useMp3Editor() {
   const [newAlbumArt, setNewAlbumArt] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // `error` menyimpan KUNCI i18n (bukan teks jadi) — pemanggil menerjemahkan dengan t(error) saat
+  // render, jadi pesan mengikuti bahasa aktif termasuk saat diganti sewaktu error tampil.
   const [error, setError] = useState<string | null>(null);
   // Guard SINKRON untuk mencegah save ganda. setSaving(true) bersifat async (baru berlaku di
   // render berikutnya), jadi kalau tombol Simpan ter-tap dua kali sangat cepat, pengecekan
@@ -40,7 +42,7 @@ export function useMp3Editor() {
       });
       setNewAlbumArt(undefined); // reset penanda "artwork diubah" tiap kali pilih file baru
     } catch (e) {
-      setError('Gagal membaca file MP3 yang dipilih. Pastikan formatnya benar.');
+      setError('err.mp3.pick');
       console.warn('pickMp3ToEdit gagal:', e);
     } finally {
       setLoading(false);
@@ -64,7 +66,7 @@ export function useMp3Editor() {
       });
       setNewAlbumArt(undefined);
     } catch (e) {
-      setError('Gagal membaca metadata lagu ini. File mungkin bukan MP3 atau tak bisa diakses.');
+      setError('err.mp3.read');
       console.warn('readMetadata gagal:', e);
     } finally {
       setLoading(false);
@@ -103,7 +105,7 @@ export function useMp3Editor() {
       });
       return true;
     } catch (e) {
-      setError('Gagal menyimpan metadata. File mungkin tidak bisa ditulis (read-only) atau rusak.');
+      setError('err.mp3.save');
       console.warn('saveMetadata gagal:', e);
       return false;
     } finally {

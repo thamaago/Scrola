@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NOTE_MAX_LENGTH, clampNote, remainingChars } from '../lib/noteLogic';
+import { useI18n } from '../lib/i18nContext';
 
 interface NoteEditorProps {
   initialValue: string;
@@ -23,6 +24,7 @@ export default function NoteEditor({
   onSave,
   onClose,
 }: NoteEditorProps) {
+  const { t } = useI18n();
   const [value, setValue] = useState(initialValue);
   const [saving, setSaving] = useState(false);
   // Guard SINKRON: penyimpanan menyentuh DB dan bisa memakan waktu; tanpa ini, tap ganda cepat
@@ -62,14 +64,14 @@ export default function NoteEditor({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Tulis catatan"
+      aria-label={t('np.writeNote')}
     >
       <div
         className="w-full max-w-sm bg-surfaceRaised rounded-[14px] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <p className="font-mono text-[10px] tracking-[0.2em] text-amber uppercase mb-1">
-          Catatan Tiket
+          {t('note.eyebrow')}
         </p>
         {contextLabel && (
           <p className="text-muted text-xs mb-3 truncate">{contextLabel}</p>
@@ -80,7 +82,7 @@ export default function NoteEditor({
           value={value}
           onChange={(e) => setValue(clampNote(e.target.value))}
           rows={3}
-          placeholder="Apa yang kamu ingat dari lagu ini?"
+          placeholder={t('note.placeholder')}
           className="w-full bg-ink text-paper rounded-lg p-3 text-[15px] leading-relaxed resize-none outline-none border border-white/5 focus:border-amber/40 placeholder:text-muted/50"
         />
 
@@ -97,20 +99,20 @@ export default function NoteEditor({
               onClick={onClose}
               className="text-muted text-sm py-2 px-3"
             >
-              Batal
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
               className="bg-amber text-ink text-sm font-semibold rounded-lg py-2 px-4 disabled:opacity-50 active:scale-[0.98] transition-transform"
             >
-              {saving ? 'Menyimpan…' : 'Simpan'}
+              {saving ? t('note.saving') : t('common.save')}
             </button>
           </div>
         </div>
 
         <p className="text-muted/60 text-[11px] mt-3 leading-relaxed">
-          Catatan tersimpan di perangkatmu saja — tidak pernah dikirim ke Last.fm.
+          {t('note.privacy')}
         </p>
       </div>
     </div>

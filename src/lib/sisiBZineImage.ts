@@ -1,6 +1,8 @@
 import { SHARE_WIDTH, SHARE_HEIGHT } from './shareCardLayout';
-import { weekRangeLabel, dayBarHeights, peakHourLabel, DAY_LABELS_ID, zineSerial } from './sisiBZineLayout';
+import { weekRangeLabel, dayBarHeights, peakHourLabel, zineSerial } from './sisiBZineLayout';
 import { formatDurationHuman, type SisiBStats } from './sisiBLogic';
+import { getActiveLocale, tActive } from './i18n';
+import { formatWeekday } from './i18nFormat';
 
 /**
  * sisiBZineImage.ts — merender recap Sisi B mingguan jadi PNG "zine" untuk dibagikan.
@@ -123,7 +125,7 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
   ctx.fillText('SCROLA', cx0, cardY + 74);
   ctx.textAlign = 'right';
   ctx.fillStyle = MUTED;
-  ctx.fillText('SISI B', cxR, cardY + 74);
+  ctx.fillText(tActive('share.zine.sideB'), cxR, cardY + 74);
   ctx.letterSpacing = '0px';
 
   // ===== Masthead: rentang minggu =====
@@ -131,13 +133,13 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
   ctx.fillStyle = MUTED;
   ctx.font = '400 24px "IBM Plex Mono", monospace';
   ctx.letterSpacing = '3px';
-  ctx.fillText('RECAP MINGGUAN', cx0, cardY + 140);
+  ctx.fillText(tActive('share.zine.weeklyRecap'), cx0, cardY + 140);
   ctx.letterSpacing = '0px';
 
   ctx.textAlign = 'center';
   ctx.fillStyle = PAPER;
   ctx.font = '600 76px Fraunces, Georgia, serif';
-  ctx.fillText(weekRangeLabel(weekStartUnixSec), cxMid, cardY + 218, cW);
+  ctx.fillText(weekRangeLabel(weekStartUnixSec, getActiveLocale()), cxMid, cardY + 218, cW);
 
   dashedLine(ctx, cx0, cardY + 268, cxR);
 
@@ -146,7 +148,7 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
   ctx.fillStyle = AMBER;
   ctx.font = '600 24px "IBM Plex Mono", monospace';
   ctx.letterSpacing = '3px';
-  ctx.fillText('LAGU MINGGU INI', cx0, cardY + 320);
+  ctx.fillText(tActive('share.zine.songOfWeek'), cx0, cardY + 320);
   ctx.letterSpacing = '0px';
 
   ctx.textAlign = 'center';
@@ -160,7 +162,7 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
   } else {
     ctx.fillStyle = MUTED;
     ctx.font = '400 40px Fraunces, Georgia, serif';
-    ctx.fillText('Belum ada scrobble minggu ini', cxMid, cardY + 410, cW);
+    ctx.fillText(tActive('share.zine.noScrobbles'), cxMid, cardY + 410, cW);
   }
 
   // ===== Bar chart mingguan =====
@@ -190,7 +192,7 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
     ctx.fillStyle = isPeak ? AMBER : MUTED;
     ctx.font = '400 22px "IBM Plex Mono", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(DAY_LABELS_ID[i], bx, chartTop + chartH + 34);
+    ctx.fillText(formatWeekday(getActiveLocale(), i, 'short'), bx, chartTop + chartH + 34);
   }
 
   // ===== Grid statistik =====
@@ -206,10 +208,10 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
     ctx.font = '400 28px Manrope, system-ui, sans-serif';
     ctx.fillText(small, x, y + 44);
   };
-  stat(colL, gridTop, String(stats.totalTracks), 'lagu');
-  stat(colR, gridTop, String(stats.totalArtists), 'artis');
-  stat(colL, gridTop + 150, formatDurationHuman(stats.totalDurationSec), 'total didengar');
-  stat(colR, gridTop + 150, String(stats.newArtistCount), 'penemuan baru', AMBER);
+  stat(colL, gridTop, String(stats.totalTracks), tActive('share.zine.stat.tracks'));
+  stat(colR, gridTop, String(stats.totalArtists), tActive('share.zine.stat.artists'));
+  stat(colL, gridTop + 150, formatDurationHuman(stats.totalDurationSec, getActiveLocale()), tActive('share.zine.stat.totalHeard'));
+  stat(colR, gridTop + 150, String(stats.newArtistCount), tActive('share.zine.stat.newDiscoveries'), AMBER);
 
   // ===== Strip jam puncak =====
   const stripY = gridTop + 300;
@@ -220,7 +222,7 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
   ctx.fillStyle = MUTED;
   ctx.font = '400 26px "IBM Plex Mono", monospace';
   ctx.letterSpacing = '3px';
-  ctx.fillText('JAM PUNCAK', cx0 + 30, stripY + 58);
+  ctx.fillText(tActive('share.zine.peakHour'), cx0 + 30, stripY + 58);
   ctx.textAlign = 'right';
   ctx.fillStyle = AMBER;
   ctx.font = '600 34px "IBM Plex Mono", monospace';
@@ -233,7 +235,7 @@ export async function renderSisiBZine(stats: SisiBStats, weekStartUnixSec: numbe
   ctx.fillStyle = MUTED;
   ctx.font = '400 22px "IBM Plex Mono", monospace';
   ctx.letterSpacing = '3px';
-  ctx.fillText('SERIAL', cx0, cardY + cardH - 108);
+  ctx.fillText(tActive('share.zine.serial'), cx0, cardY + cardH - 108);
   ctx.textAlign = 'right';
   ctx.font = '400 26px "IBM Plex Mono", monospace';
   ctx.fillText(zineSerial(weekStartUnixSec), cxR, cardY + cardH - 108);

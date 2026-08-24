@@ -5,8 +5,8 @@
  */
 
 import { subjectHash } from './ticketSerialLogic';
-
-const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+import { DEFAULT_LOCALE, type Locale } from './i18n';
+import { formatMonth } from './i18nFormat';
 
 /** Label hari, index 0=Senin .. 6=Minggu — cocok dengan urutan SisiBStats.dayCounts. */
 export const DAY_LABELS_ID = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
@@ -22,7 +22,7 @@ export const DAY_LABELS_ID = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
  * menghasilkan tengah-malam lokal. Akhir minggu dihitung via setDate(+6) — aman terhadap DST
  * seandainya nanti menyasar zona ber-DST (Indonesia sendiri tidak punya DST).
  */
-export function weekRangeLabel(weekStartUnixSec: number): string {
+export function weekRangeLabel(weekStartUnixSec: number, locale: Locale = DEFAULT_LOCALE): string {
   const start = new Date(weekStartUnixSec * 1000);
   const end = new Date(start);
   end.setDate(end.getDate() + 6);
@@ -34,12 +34,13 @@ export function weekRangeLabel(weekStartUnixSec: number): string {
   const eM = end.getMonth();
   const eY = end.getFullYear();
 
-  const right = `${eD} ${MONTHS_ID[eM]} ${eY}`;
+  const mon = (m: number) => formatMonth(locale, m, 'short');
+  const right = `${eD} ${mon(eM)} ${eY}`;
   let left: string;
   if (sY !== eY) {
-    left = `${sD} ${MONTHS_ID[sM]} ${sY}`;
+    left = `${sD} ${mon(sM)} ${sY}`;
   } else if (sM !== eM) {
-    left = `${sD} ${MONTHS_ID[sM]}`;
+    left = `${sD} ${mon(sM)}`;
   } else {
     left = `${sD}`;
   }

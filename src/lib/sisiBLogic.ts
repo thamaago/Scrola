@@ -1,3 +1,5 @@
+import { translatePlural, DEFAULT_LOCALE, type Locale } from './i18n';
+
 export interface SisiBRow {
   artist: string;
   track: string;
@@ -126,12 +128,18 @@ export function startOfIsoWeek(reference: Date = new Date()): Date {
   return d;
 }
 
-/** Format detik jadi "X jam Y menit" (atau "Y menit" saja kalau < 1 jam). */
-export function formatDurationHuman(totalSec: number): string {
+/**
+ * Format detik jadi durasi manusiawi per-locale, mis. "6 jam 12 menit" / "6 hours 12 minutes".
+ * Satuan jam/menit diambil dari kamus (jamak sadar-locale). `locale` default 'id' agar pemanggil
+ * & test lama tetap konsisten tanpa perubahan.
+ */
+export function formatDurationHuman(totalSec: number, locale: Locale = DEFAULT_LOCALE): string {
   const totalMin = Math.round(totalSec / 60);
   const hours = Math.floor(totalMin / 60);
   const minutes = totalMin % 60;
-  if (hours === 0) return `${minutes} menit`;
-  if (minutes === 0) return `${hours} jam`;
-  return `${hours} jam ${minutes} menit`;
+  const h = () => translatePlural(locale, 'unit.hours', hours);
+  const m = () => translatePlural(locale, 'unit.minutes', minutes);
+  if (hours === 0) return m();
+  if (minutes === 0) return h();
+  return `${h()} ${m()}`;
 }

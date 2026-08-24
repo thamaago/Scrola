@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { positionFromTouch, progressRatio, formatMs } from '../lib/seekLogic';
+import { useI18n } from '../lib/i18nContext';
 
 interface SeekTimelineProps {
   positionMs: number;
@@ -28,6 +29,7 @@ export default function SeekTimeline({
   scrobbleAtMs = 0,
   onSeek,
 }: SeekTimelineProps) {
+  const { t } = useI18n();
   const trackRef = useRef<HTMLDivElement>(null);
   // Saat menggeser, posisi ditentukan jari — BUKAN oleh pembaruan posisi dari player. Tanpa
   // pemisahan ini, bar akan "melawan" jari: geser ke kanan lalu tersentak balik tiap kali event
@@ -53,11 +55,11 @@ export default function SeekTimeline({
         ref={trackRef}
         className="relative h-9 flex items-center cursor-pointer touch-none"
         role="slider"
-        aria-label="Posisi pemutaran"
+        aria-label={t('seek.aria')}
         aria-valuemin={0}
         aria-valuemax={Math.max(0, Math.round(durationMs / 1000))}
         aria-valuenow={Math.round(shownMs / 1000)}
-        aria-valuetext={`${formatMs(shownMs)} dari ${formatMs(durationMs)}`}
+        aria-valuetext={t('seek.valueText', { pos: formatMs(shownMs), dur: formatMs(durationMs) })}
         onPointerDown={(e) => {
           if (durationMs <= 0) return;
           e.currentTarget.setPointerCapture(e.pointerId);

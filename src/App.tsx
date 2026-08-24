@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { logValidationChecklist } from './lib/validationChecklist';
+import { useI18n } from './lib/i18nContext';
 import LoginScreen from './screens/LoginScreen';
 import NowPlayingScreen from './screens/NowPlayingScreen';
 import HistoryScreen from './screens/HistoryScreen';
@@ -14,14 +16,15 @@ import { useScrobbleHistory } from './hooks/useScrobbleHistory';
 import { flushQueue } from './lib/scrobbleEngine';
 
 const TABS = [
-  ['now', 'Sekarang'],
-  ['history', 'Riwayat'],
-  ['settings', 'Atur'],
+  ['now', 'nav.now'],
+  ['history', 'nav.history'],
+  ['settings', 'nav.settings'],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
 
 export default function App() {
+  const { t: tr } = useI18n();
   const [username, setUsername] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [tab, setTab] = useState<Tab>('now');
@@ -50,6 +53,7 @@ export default function App() {
       .finally(() => {
         setCheckingSession(false);
       });
+    logValidationChecklist();
   }, []);
 
   // Sinkronisasi scrobble: serap yang ditangkap NATIVE di latar (Opsi 2), kirim sisa antrean,
@@ -201,7 +205,7 @@ export default function App() {
             className="flex-1 py-3.5 text-sm font-body"
             style={{ color: tab === t ? '#D6A756' : '#8FA394', transition: 'color 0.25s ease' }}
           >
-            {label}
+            {tr(label)}
           </button>
         ))}
         {/* Indikator garis atas — meluncur mengikuti tab aktif */}

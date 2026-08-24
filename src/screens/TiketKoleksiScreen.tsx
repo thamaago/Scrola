@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { getTicketCollection } from '../lib/db/queries';
-import type { CollectibleTicket, TicketProgress, TicketKind } from '../lib/ticketSerialLogic';
+import type { CollectibleTicket, TicketProgress } from '../lib/ticketSerialLogic';
 import { renderTicketShareImage, drawTicketEmblem } from '../lib/ticketShareImage';
 import { emblemSeed } from '../lib/ticketShareLayout';
 import { SharePlugin } from '../lib/share';
+import { useI18n } from '../lib/i18nContext';
+import { formatDate } from '../lib/i18nFormat';
+import type { Locale } from '../lib/i18n';
 
 /** Emblem generatif mini per tiket — ikon musik unik per lagu+jenis, membuat tiap tiket mencolok beda. */
 function TicketEmblem({ ticket, size = 78 }: { ticket: CollectibleTicket; size?: number }) {
@@ -35,43 +38,37 @@ function TicketEmblem({ ticket, size = 78 }: { ticket: CollectibleTicket; size?:
  * ticketSerialLogic.test.ts; tata letak & animasi tetap perlu dikonfirmasi di perangkat.
  */
 
-const KIND_LABEL: Record<TicketKind, string> = {
-  jejak: 'Jejak',
-  penemuan: 'Penemuan',
-  setia: 'Setia',
-  beruntun: 'Beruntun',
-  trofi: 'Momen',
-};
+// Label jenis tiket kini lewat i18n: t(`ticket.${kind}`) — lihat locales/.
 
-function formatEarned(sec: number): string {
+function formatEarned(sec: number, locale: Locale): string {
   const d = new Date(sec * 1000);
   if (isNaN(d.getTime())) return '—';
-  const date = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  const date = formatDate(locale, d, { day: 'numeric', month: 'short', year: 'numeric' });
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${date} · ${hh}.${mm}`;
 }
 
-function ProgressRow({ label, ordinal, remaining, unit }: {
+function ProgressRow({ label, ordinalText, remainingText }: {
   label: string;
-  ordinal: number;
-  remaining: number;
-  unit: string;
+  ordinalText: string;
+  remainingText: string;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-2 border-b border-white/5 last:border-0">
       <span className="text-sm text-paper">
         {label}
-        <span className="text-muted"> · tiket ke-{ordinal}</span>
+        <span className="text-muted"> · {ordinalText}</span>
       </span>
       <span className="font-mono text-[11px] text-amber whitespace-nowrap">
-        {remaining} {unit} lagi
+        {remainingText}
       </span>
     </div>
   );
 }
 
 function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
+  const { t, locale } = useI18n();
   const [sharing, setSharing] = useState(false);
 
   async function handleShare() {
@@ -82,7 +79,7 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
       await SharePlugin.shareImage({
         base64,
         filename: `scrola-tiket-${ticket.serial}.png`,
-        title: `Tiket ${ticket.serial}`,
+        title: t('tiket.serialShareLabel', { serial: ticket.serial }),
       });
     } catch (e) {
       console.warn('Gagal membagikan tiket:', e);
@@ -100,9 +97,9 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
       <div className="flex-1 py-4 pr-4 pl-3 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-[10px] tracking-[0.2em] text-amber uppercase">
-            {KIND_LABEL[ticket.kind]}
+            {t(`ticket.${ticket.kind}`)}
           </span>
-          <span className="font-mono text-[10px] text-muted">{formatEarned(ticket.earnedAtSec)}</span>
+          <span className="font-mono text-[10px] text-muted">{formatEarned(ticket.earnedAtSec, locale)}</span>
         </div>
 
         <h3 className="font-display text-lg leading-snug font-semibold text-paper mt-1.5">
@@ -114,7 +111,7 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
         {ticket.earnedTrack && (
           <p className="text-[13px] text-muted/70 italic truncate mt-0.5">
             {ticket.subject
-              ? `lewat “${ticket.earnedTrack.track}”`
+              ? t('tiket.via', { track: ticket.earnedTrack.track })
               : `${ticket.earnedTrack.artist} — ${ticket.earnedTrack.track}`}
           </p>
         )}
@@ -128,9 +125,9 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
             onClick={handleShare}
             disabled={sharing}
             className="font-mono text-[11px] text-amber border border-amber/40 rounded-full px-3 py-1.5 disabled:opacity-40 active:scale-[0.98] transition-transform shrink-0"
-            aria-label={`Bagikan tiket ${ticket.serial}`}
+            aria-label={t('tiket.serialShareLabel', { serial: ticket.serial })}
           >
-            {sharing ? 'Menyiapkan…' : '↗ Bagikan'}
+            {sharing ? t('ticket.preparing') : `↗ ${t('ticket.share')}`}
           </button>
         </div>
       </div>
@@ -139,6 +136,7 @@ function TicketStub({ ticket }: { ticket: CollectibleTicket }) {
 }
 
 export default function TiketKoleksiScreen({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t, tp } = useI18n();
   const [tickets, setTickets] = useState<CollectibleTicket[]>([]);
   const [progress, setProgress] = useState<TicketProgress | null>(null);
   const [loading, setLoading] = useState(false);
@@ -183,24 +181,24 @@ export default function TiketKoleksiScreen({ open, onClose }: { open: boolean; o
     <div className="fixed inset-0 bg-ink z-40 overflow-y-auto">
       <div className="relative px-7 pt-10 pb-16 min-h-full flex flex-col">
         <div className="flex justify-between items-center">
-          <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase">Koleksi</p>
-          <button onClick={onClose} className="text-muted text-[13px]" aria-label="Tutup koleksi">
-            Tutup
+          <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase">{t('tiket.eyebrow')}</p>
+          <button onClick={onClose} className="text-muted text-[13px]" aria-label={t('tiket.aria.close')}>
+            {t('common.close')}
           </button>
         </div>
 
         <h1 className="font-display text-[28px] leading-tight font-semibold text-paper mt-2">
-          Tiket
+          {t('tiket.title')}
         </h1>
         <p className="text-muted text-sm mt-1.5 leading-relaxed">
-          Setiap pencapaian mencetak satu tiket bernomor seri. Kumpulkan seiring ceritamu tumbuh.
+          {t('tiket.subtitle')}
         </p>
 
-        {loading && <p className="text-muted text-sm mt-8">Memuat koleksi…</p>}
+        {loading && <p className="text-muted text-sm mt-8">{t('tiket.loading')}</p>}
 
         {error && (
           <p className="text-coral text-sm mt-8">
-            Koleksi tidak terbaca. Coba tutup lalu buka lagi.
+            {t('tiket.error')}
           </p>
         )}
 
@@ -209,22 +207,20 @@ export default function TiketKoleksiScreen({ open, onClose }: { open: boolean; o
             {hasProgress && (
               <div className="mt-7 bg-surfaceRaised rounded-xl border border-white/5 px-4 py-3">
                 <p className="font-mono text-[10px] tracking-[0.2em] text-muted uppercase mb-1">
-                  Menuju berikutnya
+                  {t('tiket.nextTitle')}
                 </p>
                 {progress?.nextJejak && (
                   <ProgressRow
-                    label="Scrobble"
-                    ordinal={progress.nextJejak.ordinal}
-                    remaining={progress.nextJejak.remaining}
-                    unit="scrobble"
+                    label={t('tiket.next.scrobble')}
+                    ordinalText={t('tiket.next.ordinal', { ordinal: progress.nextJejak.ordinal })}
+                    remainingText={t('tiket.next.remaining.scrobble', { remaining: progress.nextJejak.remaining })}
                   />
                 )}
                 {progress?.nextPenemuan && (
                   <ProgressRow
-                    label="Penemuan artis"
-                    ordinal={progress.nextPenemuan.ordinal}
-                    remaining={progress.nextPenemuan.remaining}
-                    unit="artis"
+                    label={t('tiket.next.penemuan')}
+                    ordinalText={t('tiket.next.ordinal', { ordinal: progress.nextPenemuan.ordinal })}
+                    remainingText={t('tiket.next.remaining.artist', { remaining: progress.nextPenemuan.remaining })}
                   />
                 )}
               </div>
@@ -232,16 +228,15 @@ export default function TiketKoleksiScreen({ open, onClose }: { open: boolean; o
 
             {tickets.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center px-4 py-16">
-                <p className="font-display text-2xl text-paper mb-2">Belum ada tiket</p>
+                <p className="font-display text-2xl text-paper mb-2">{t('tiket.empty.title')}</p>
                 <p className="text-muted text-sm max-w-xs">
-                  Tiket pertamamu tercetak begitu scrobble pertama tercatat. Putar lagu, dan mulailah
-                  mengoleksi.
+                  {t('tiket.empty.body')}
                 </p>
               </div>
             ) : (
               <div className="mt-7 space-y-2.5">
                 <p className="font-mono text-[10px] tracking-[0.2em] text-muted uppercase mb-1">
-                  {tickets.length} tiket terkumpul
+                  {tp('ticket.collected', tickets.length)}
                 </p>
                 {tickets.map((t) => (
                   <TicketStub key={t.serial} ticket={t} />

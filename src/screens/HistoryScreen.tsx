@@ -7,12 +7,10 @@ import type { HistoryEntry } from '../hooks/useScrobbleHistory';
 import { groupHistoryByDay, groupHistoryByPeriod, filterHistoryWithNotes, recentHistory, paginateHistory } from '../lib/historyGrouping';
 import { getAllHistory } from '../lib/db/queries';
 import type { HistoryRow } from '../lib/db/queries';
+import { useI18n } from '../lib/i18nContext';
 
+// Angka Romawi bulan — netral bahasa. Nama bulan kini via i18n (month()).
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-const BULAN = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-];
 
 export default function HistoryScreen({
   items,
@@ -35,6 +33,7 @@ export default function HistoryScreen({
   /** Dipanggil setelah catatan tersimpan supaya App memuat ulang riwayat & catatannya tampil. */
   onNoteSaved?: () => void;
 }) {
+  const { t, tp, month, locale } = useI18n();
   // Sheet aksi per-tiket: null = tertutup. 'menu' = pilih aksi; 'edit' = form; 'delete' = konfirmasi.
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
   const [mode, setMode] = useState<'menu' | 'edit' | 'delete'>('menu');
@@ -86,9 +85,10 @@ export default function HistoryScreen({
   // Kelompokkan hanya item di HALAMAN ini. Bentuk grup identik → rendering tak berubah.
   const groups = useMemo(() => {
     const its = pageData.pageItems;
-    if (viewMode === 'week' || viewMode === 'month') return groupHistoryByPeriod(its, viewMode);
-    return groupHistoryByDay(its); // recent / day / notes
-  }, [pageData, viewMode]);
+    if (viewMode === 'week' || viewMode === 'month')
+      return groupHistoryByPeriod(its, viewMode, new Date(), locale);
+    return groupHistoryByDay(its, new Date(), locale); // recent / day / notes
+  }, [pageData, viewMode, locale]);
 
   // Reset ke halaman awal saat ganti mode (rentang halaman bisa beda).
   useEffect(() => {
@@ -106,45 +106,48 @@ export default function HistoryScreen({
           disabled={pageData.page === 0}
           className="font-mono text-[11px] rounded-full px-3 py-1.5 border border-white/10 text-paper disabled:opacity-30 active:scale-[0.98] transition-transform"
         >
-          ‹ Sebelumnya
+          {t('history.prev')}
         </button>
         <span className="font-mono text-[10px] text-muted text-center leading-snug">
-          {pageData.page * 10 + 1}–{Math.min((pageData.page + 1) * 10, pageData.total)} dari{' '}
-          {pageData.total}
+          {t('history.pageRange', {
+            from: pageData.page * 10 + 1,
+            to: Math.min((pageData.page + 1) * 10, pageData.total),
+            total: pageData.total,
+          })}
           <br />
-          Hal {pageData.page + 1}/{pageData.totalPages}
+          {t('history.pageOf', { page: pageData.page + 1, total: pageData.totalPages })}
         </span>
         <button
           onClick={() => setPage((p) => Math.min(pageData.totalPages - 1, p + 1))}
           disabled={pageData.page >= pageData.totalPages - 1}
           className="font-mono text-[11px] rounded-full px-3 py-1.5 border border-white/10 text-paper disabled:opacity-30 active:scale-[0.98] transition-transform"
         >
-          Berikutnya ›
+          {t('history.next')}
         </button>
       </div>
     ) : null;
 
   const now = new Date();
-  const babLabel = `Bab ${ROMAN[now.getMonth()]} · ${BULAN[now.getMonth()]}`;
+  const babLabel = t('history.bab', { roman: ROMAN[now.getMonth()], month: month(now.getMonth()) });
 
   return (
     <div className="min-h-screen px-4 pt-8 pb-24">
       <div className="flex justify-between items-center mx-2 mb-[18px]">
-        <h1 className="font-display text-2xl font-semibold text-paper">Riwayat</h1>
+        <h1 className="font-display text-2xl font-semibold text-paper">{t('history.title')}</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenTickets}
             className="flex items-center gap-1.5 bg-surfaceRaised border border-amber/25 rounded-full py-[7px] px-3.5 active:scale-[0.98] transition-transform"
-            aria-label="Buka koleksi tiket"
+            aria-label={t('history.aria.openTickets')}
           >
             <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase whitespace-nowrap">
-              Tiket
+              {t('history.tickets')}
             </span>
           </button>
           <button
             onClick={onOpenSisiB}
             className="flex items-center gap-2 bg-surfaceRaised border border-amber/25 rounded-full py-[7px] px-3.5 active:scale-[0.98] transition-transform"
-            aria-label="Buka rekap mingguan Sisi B"
+            aria-label={t('history.aria.openSisiB')}
           >
             <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase whitespace-nowrap">
               {babLabel}
@@ -156,13 +159,7 @@ export default function HistoryScreen({
 
       {/* Pemilih tampilan: Terbaru (10) vs periode utuh vs bercatatan. */}
       <div className="flex gap-1.5 mx-2 mb-4 overflow-x-auto no-scrollbar">
-        {([
-          ['recent', 'Terbaru'],
-          ['day', 'Per hari'],
-          ['week', 'Per minggu'],
-          ['month', 'Per bulan'],
-          ['notes', 'Bercatatan'],
-        ] as const).map(([m, label]) => (
+        {(['recent', 'day', 'week', 'month', 'notes'] as const).map((m) => (
           <button
             key={m}
             onClick={() => setViewMode(m)}
@@ -172,30 +169,28 @@ export default function HistoryScreen({
                 : 'bg-surface border border-white/10 text-muted'
             }`}
           >
-            {label}
+            {t(`history.view.${m}`)}
           </button>
         ))}
       </div>
 
       {viewMode === 'recent' && items.length > 10 && (
         <p className="font-mono text-[10px] text-muted mx-2 mb-3">
-          Menampilkan 10 terakhir — pilih Per hari/minggu/bulan untuk riwayat utuh.
+          {t('history.recentNote')}
         </p>
       )}
 
       {paginationBar}
 
       {loadingFull ? (
-        <p className="text-muted text-sm text-center pt-16">Memuat riwayat utuh…</p>
+        <p className="text-muted text-sm text-center pt-16">{t('history.loadingFull')}</p>
       ) : groups.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center px-4 pt-24">
           <p className="font-display text-2xl text-paper mb-2">
-            {viewMode === 'notes' ? 'Belum ada catatan' : 'Buku ceritamu masih kosong'}
+            {viewMode === 'notes' ? t('history.notes.empty.title') : t('history.empty.title')}
           </p>
           <p className="text-muted text-sm max-w-xs">
-            {viewMode === 'notes'
-              ? 'Tulis catatan pada sebuah lagu, dan ia akan muncul di sini.'
-              : 'Setiap lagu yang selesai kamu dengarkan akan muncul di sini sebagai tiket.'}
+            {viewMode === 'notes' ? t('history.notes.empty.body') : t('history.empty.body')}
           </p>
         </div>
       ) : (
@@ -204,12 +199,12 @@ export default function HistoryScreen({
             <div className="flex items-baseline justify-between mx-2 mb-2.5">
               <span
                 className={`font-mono text-[11px] tracking-[0.2em] uppercase ${
-                  gi === 0 && group.label === 'Hari ini' ? 'text-amber' : 'text-muted'
+                  gi === 0 && group.isToday ? 'text-amber' : 'text-muted'
                 }`}
               >
                 {group.label}
               </span>
-              <span className="font-mono text-[11px] text-muted">{group.items.length} lagu</span>
+              <span className="font-mono text-[11px] text-muted">{tp('count.tracks', group.items.length)}</span>
             </div>
             <div className="flex flex-col gap-2.5">
               {group.items.map((item) => {
@@ -263,7 +258,7 @@ export default function HistoryScreen({
             <p className="text-muted text-sm truncate mb-1">{selected.artist}</p>
             {/* Kejujuran soal batas: aksi di sini hanya menyentuh riwayat lokal */}
             <p className="font-mono text-[10px] text-muted/70 mb-4">
-              Hanya riwayat lokal — profil Last.fm tidak berubah (batas API mereka).
+              {t('history.localOnly')}
             </p>
 
             {mode === 'menu' && (
@@ -272,22 +267,22 @@ export default function HistoryScreen({
                   onClick={() => setNoteTarget(selected)}
                   className="w-full bg-surface border border-amber/30 rounded-lg py-3.5 text-amber text-sm font-medium"
                 >
-                  {hasNote(selected.note) ? '✎ Ubah catatan' : '+ Tulis catatan'}
+                  {hasNote(selected.note) ? `✎ ${t('history.action.editNote')}` : `+ ${t('history.action.addNote')}`}
                 </button>
                 <button
                   onClick={() => setMode('edit')}
                   className="w-full bg-surface border border-white/10 rounded-lg py-3.5 text-paper text-sm font-medium"
                 >
-                  ✎ Edit tiket ini
+                  {`✎ ${t('history.action.editTicket')}`}
                 </button>
                 <button
                   onClick={() => setMode('delete')}
                   className="w-full bg-surface border border-coral/30 rounded-lg py-3.5 text-coral text-sm font-medium"
                 >
-                  Hapus dari riwayat
+                  {t('history.action.delete')}
                 </button>
                 <button onClick={closeSheet} className="w-full py-3 text-muted text-sm">
-                  Batal
+                  {t('common.cancel')}
                 </button>
               </div>
             )}
@@ -296,13 +291,13 @@ export default function HistoryScreen({
               <div className="flex flex-col gap-2.5">
                 {(
                   [
-                    ['track', 'Judul'],
-                    ['artist', 'Artis'],
-                    ['album', 'Album (opsional)'],
+                    ['track', 'history.edit.title'],
+                    ['artist', 'history.edit.artist'],
+                    ['album', 'history.edit.album'],
                   ] as const
-                ).map(([field, label]) => (
+                ).map(([field, labelKey]) => (
                   <label key={field} className="block">
-                    <span className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase">{label}</span>
+                    <span className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase">{t(labelKey)}</span>
                     <input
                       value={editFields[field]}
                       onChange={(e) => setEditFields((f) => ({ ...f, [field]: e.target.value }))}
@@ -325,10 +320,10 @@ export default function HistoryScreen({
                   disabled={!editFields.artist.trim() || !editFields.track.trim()}
                   className="w-full bg-amber text-ink font-semibold rounded-lg py-3.5 text-sm mt-1 disabled:opacity-40"
                 >
-                  Simpan
+                  {t('common.save')}
                 </button>
                 <button onClick={() => setMode('menu')} className="w-full py-2.5 text-muted text-sm">
-                  Kembali
+                  {t('common.back')}
                 </button>
               </div>
             )}
@@ -336,7 +331,7 @@ export default function HistoryScreen({
             {mode === 'delete' && (
               <div className="flex flex-col gap-2.5">
                 <p className="text-paper text-sm leading-relaxed">
-                  Hapus tiket ini dari riwayat lokal? Tindakan ini tidak bisa dibatalkan.
+                  {t('history.delete.confirm')}
                 </p>
                 <button
                   onClick={() => {
@@ -345,10 +340,10 @@ export default function HistoryScreen({
                   }}
                   className="w-full bg-coral text-ink font-semibold rounded-lg py-3.5 text-sm"
                 >
-                  Ya, hapus
+                  {t('history.delete.yes')}
                 </button>
                 <button onClick={() => setMode('menu')} className="w-full py-2.5 text-muted text-sm">
-                  Kembali
+                  {t('common.back')}
                 </button>
               </div>
             )}

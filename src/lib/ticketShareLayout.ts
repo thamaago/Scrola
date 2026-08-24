@@ -1,4 +1,5 @@
 import type { CollectibleTicket } from './ticketSerialLogic';
+import { translate, DEFAULT_LOCALE, type Locale } from './i18n';
 
 /**
  * ticketShareLayout.ts — bagian MURNI (teruji) dari gambar tiket yang bisa dibagikan. Menghitung
@@ -29,10 +30,13 @@ export function ticketPatternSeed(serial: string): number {
  * (penemuan — artis sudah tampil) cukup judulnya: lewat “Judul”. Untuk tiket tanpa subject
  * (jejak) tampilkan penuh: Artis — Judul. Null bila tak ada earnedTrack.
  */
-export function ticketEarnedLine(ticket: CollectibleTicket): string | null {
+export function ticketEarnedLine(
+  ticket: CollectibleTicket,
+  locale: Locale = DEFAULT_LOCALE
+): string | null {
   const et = ticket.earnedTrack;
   if (!et) return null;
-  if (ticket.subject) return `lewat “${et.track}”`;
+  if (ticket.subject) return translate(locale, 'tiket.via', { track: et.track });
   return `${et.artist} — ${et.track}`;
 }
 

@@ -69,3 +69,32 @@ export async function toggleIgnoredSource(pkg: string): Promise<string[]> {
   await setIgnoredSources(next);
   return next;
 }
+
+// --- Locale (bahasa tampilan) ---
+import type { Locale } from './i18n';
+import { resolveLocale } from './i18n';
+
+const KEY_LOCALE = 'pref_locale';
+let localeCache: Locale | null = null;
+
+/** Locale tersimpan, atau null bila belum pernah dipilih (pemanggil boleh pakai bahasa perangkat). */
+export async function getSavedLocale(): Promise<Locale | null> {
+  if (localeCache !== null) return localeCache;
+  try {
+    const { value } = await SecureStore.get({ key: KEY_LOCALE });
+    if (!value) return null;
+    localeCache = resolveLocale(value);
+    return localeCache;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSavedLocale(locale: Locale): Promise<void> {
+  localeCache = locale;
+  try {
+    await SecureStore.set({ key: KEY_LOCALE, value: locale });
+  } catch (e) {
+    console.warn('Gagal menyimpan preferensi bahasa:', e);
+  }
+}

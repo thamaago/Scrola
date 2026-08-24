@@ -1,10 +1,14 @@
 import type { HistoryRow } from './db/queries';
+import { translate, DEFAULT_LOCALE, type Locale } from './i18n';
+import { formatDate, formatMonth } from './i18nFormat';
 
 export interface DayGroup {
   /** Kunci unik untuk React key, format Y-M-D lokal (bukan untuk ditampilkan) */
   key: string;
-  /** Label yang ditampilkan: "Hari ini" / "Kemarin" / "05 Jul" */
+  /** Label yang ditampilkan: "Hari ini" / "Kemarin" / "05 Jul" (sudah sesuai locale) */
   label: string;
+  /** True untuk grup "hari ini" — dipakai UI untuk menyorot tanpa membandingkan string label. */
+  isToday?: boolean;
   items: HistoryRow[];
 }
 
@@ -22,7 +26,11 @@ function dayKey(d: Date): string {
  * PENTING: `items` harus SUDAH terurut DESC by timestamp (seperti hasil `getHistory()`) —
  * fungsi ini tidak mengurutkan ulang, hanya mengelompokkan sambil mempertahankan urutan asli.
  */
-export function groupHistoryByDay(items: HistoryRow[], now: Date = new Date()): DayGroup[] {
+export function groupHistoryByDay(
+  items: HistoryRow[],
+  now: Date = new Date(),
+  locale: Locale = DEFAULT_LOCALE
+): DayGroup[] {
   const todayKey = dayKey(now);
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
@@ -37,11 +45,17 @@ export function groupHistoryByDay(items: HistoryRow[], now: Date = new Date()): 
     let idx = indexByKey.get(key);
     if (idx === undefined) {
       let label: string;
-      if (key === todayKey) label = 'Hari ini';
-      else if (key === yesterdayKey) label = 'Kemarin';
-      else label = d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+      let isToday = false;
+      if (key === todayKey) {
+        label = translate(locale, 'hg.today');
+        isToday = true;
+      } else if (key === yesterdayKey) {
+        label = translate(locale, 'hg.yesterday');
+      } else {
+        label = formatDate(locale, d, { day: '2-digit', month: 'short' });
+      }
       idx = groups.length;
-      groups.push({ key, label, items: [] });
+      groups.push({ key, label, isToday, items: [] });
       indexByKey.set(key, idx);
     }
     groups[idx].items.push(item);
@@ -54,11 +68,6 @@ import { weekRangeLabel } from './sisiBZineLayout';
 
 export type HistoryPeriod = 'day' | 'week' | 'month';
 
-const MONTHS_LONG = [
-  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-];
-
 /**
  * Kelompokkan riwayat per PERIODE: hari (delegasi ke groupHistoryByDay), minggu (Senin–Minggu, label
  * "Minggu ini"/"Minggu lalu"/rentang), atau bulan ("Bulan ini"/"Bulan lalu"/"Nama Tahun"). Bentuk
@@ -68,9 +77,10 @@ const MONTHS_LONG = [
 export function groupHistoryByPeriod(
   items: HistoryRow[],
   period: HistoryPeriod,
-  now: Date = new Date()
+  now: Date = new Date(),
+  locale: Locale = DEFAULT_LOCALE
 ): DayGroup[] {
-  if (period === 'day') return groupHistoryByDay(items, now);
+  if (period === 'day') return groupHistoryByDay(items, now, locale);
 
   const groups = new Map<string, DayGroup>();
   const nowWeekStart = startOfIsoWeek(now).getTime();
@@ -85,17 +95,17 @@ export function groupHistoryByPeriod(
       const weekStart = startOfIsoWeek(d);
       const ws = weekStart.getTime();
       key = `w-${ws}`;
-      if (ws === nowWeekStart) label = 'Minggu ini';
-      else if (ws === prevWeekStart) label = 'Minggu lalu';
-      else label = weekRangeLabel(Math.floor(ws / 1000));
+      if (ws === nowWeekStart) label = translate(locale, 'hg.thisWeek');
+      else if (ws === prevWeekStart) label = translate(locale, 'hg.lastWeek');
+      else label = weekRangeLabel(Math.floor(ws / 1000), locale);
     } else {
       key = `m-${d.getFullYear()}-${d.getMonth()}`;
       const sameMonth = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
       const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const isPrevMonth = d.getFullYear() === prev.getFullYear() && d.getMonth() === prev.getMonth();
-      if (sameMonth) label = 'Bulan ini';
-      else if (isPrevMonth) label = 'Bulan lalu';
-      else label = `${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}`;
+      if (sameMonth) label = translate(locale, 'hg.thisMonth');
+      else if (isPrevMonth) label = translate(locale, 'hg.lastMonth');
+      else label = translate(locale, 'hg.monthYear', { month: formatMonth(locale, d.getMonth(), 'long'), year: d.getFullYear() });
     }
 
     if (!groups.has(key)) groups.set(key, { key, label, items: [] });

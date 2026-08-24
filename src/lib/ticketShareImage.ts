@@ -1,6 +1,8 @@
 import { SHARE_WIDTH, SHARE_HEIGHT } from './shareCardLayout';
 import { emblemSeed, ticketEarnedLine } from './ticketShareLayout';
 import type { CollectibleTicket } from './ticketSerialLogic';
+import { getActiveLocale, tActive } from './i18n';
+import { formatMonth } from './i18nFormat';
 
 /**
  * ticketShareImage.ts — render SATU tiket koleksi jadi PNG 9:16 yang bisa dibagikan (base64 tanpa
@@ -17,20 +19,17 @@ const CORAL = '#FF7A6B';
 const PAPER = '#EFEDE0';
 const MUTED = '#8FA394';
 
-const KIND_LABEL: Record<CollectibleTicket['kind'], string> = {
-  jejak: 'JEJAK',
-  penemuan: 'PENEMUAN',
-  setia: 'SETIA',
-  beruntun: 'BERUNTUN',
-  trofi: 'MOMEN',
-};
+// Label jenis tiket mengikuti bahasa aktif (kapital), memakai kunci ticket.<kind> yang sama dgn UI.
+function kindLabel(kind: CollectibleTicket['kind']): string {
+  return tActive(`ticket.${kind}`).toUpperCase();
+}
 
 function formatEarned(unixSec: number): string {
   const d = new Date(unixSec * 1000);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const mon = formatMonth(getActiveLocale(), d.getMonth(), 'short');
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} · ${hh}.${mm}`;
+  return `${d.getDate()} ${mon} ${d.getFullYear()} · ${hh}.${mm}`;
 }
 
 /** Bungkus teks ke beberapa baris agar muat di lebar maksimum. */
@@ -337,7 +336,7 @@ export async function renderTicketShareImage(ticket: CollectibleTicket): Promise
   ctx.font = '500 26px "IBM Plex Mono", monospace';
   centerText(ctx, 'K O L E K S I · S C R O L A', cx, cardY + 78);
   ctx.font = '600 30px "IBM Plex Mono", monospace';
-  centerText(ctx, KIND_LABEL[ticket.kind], cx, cardY + 150);
+  centerText(ctx, kindLabel(ticket.kind), cx, cardY + 150);
 
   // Judul milestone (wrap)
   ctx.fillStyle = PAPER;
@@ -365,7 +364,7 @@ export async function renderTicketShareImage(ticket: CollectibleTicket): Promise
   }
 
   // Lagu pemicu
-  const earned = ticketEarnedLine(ticket);
+  const earned = ticketEarnedLine(ticket, getActiveLocale());
   if (earned) {
     ctx.fillStyle = MUTED;
     ctx.font = 'italic 400 36px Fraunces, Georgia, serif';
