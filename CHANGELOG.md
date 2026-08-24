@@ -1153,7 +1153,7 @@ tetap menghitung mundur untuk scrobble):
   `useNowPlaying` yang hanya mendengarkan event plugin `NowPlaying` (deteksi eksternal). Kedua
   plugin ini terpisah, jadi lagu yang diputar DI DALAM Scrola tidak pernah melewati pengecekan
   scrobble sama sekali — memutar musik, memperbarui UI & tiket, tapi Riwayat tetap kosong. Ini
-  melanggar prinsip inti "satu pipeline" yang tercatat di CLAUDE.md.
+  melanggar prinsip inti "satu pipeline" proyek.
 - **`maybeScrobble()` terpusat di `scrobbleEngine`**: satu fungsi berisi aturan eligibility +
   guard anti-dobel (Set level-modul) + enqueue, dipakai bersama. `NowPlayingScreen` kini
   memanggilnya untuk player internal via `player.state`, dengan `sourcePackage='com.scrola.app'`.
@@ -1299,7 +1299,6 @@ tetap menghitung mundur untuk scrobble):
   kode Kotlin tidak ter-compile sama sekali (plugin Kotlin tak aktif di Gradle). Mengubah kode yang
   tidak rusak justru menanam bug baru yang baru muncul beberapa build kemudian, setelah masalah
   lain teratasi. Pelajaran: jangan mengubah kode berdasarkan tebakan; tunggu log.
-- Jebakan ini ditambahkan ke `.claude/agents/native-android-specialist.md` agar tidak terulang.
 
 ### Milestone — Perbaikan CORS terbukti bekerja
 - Error yang muncul kini berasal dari `saveSession()`, BUKAN dari pemanggilan API. Artinya seluruh
@@ -1485,7 +1484,7 @@ tetap menghitung mundur untuk scrobble):
   require is not defined in ES module scope`. Diganti ekstensinya ke **`.cjs`**
   (`scripts/apply-native-overlay.cjs`) — Node memperlakukan `.cjs` sebagai CommonJS terlepas dari
   `"type"`, jadi isi script tidak perlu diubah sama sekali. Rujukan di `package.json`, README,
-  CLAUDE.md, dan CONTRIBUTING.md diperbarui. Script kini diuji end-to-end terhadap struktur
+  dan CONTRIBUTING.md diperbarui. Script kini diuji end-to-end terhadap struktur
   `android/` tiruan hasil `cap add`: 14 file Kotlin tersalin, strings tergabung tanpa duplikat,
   minSdk 22→23, ketiga dependensi tersuntik ke blok yang benar.
 - **`typescript` tidak pernah terdaftar di `package.json`** — padahal seluruh proyek ditulis dalam
@@ -1604,19 +1603,6 @@ tetap menghitung mundur untuk scrobble):
   preferensi yang sama seperti jalur scrobble; bila preferensi gagal terbaca, memilih diam
   (aman ke arah privasi). Belum tervalidasi di device.
 
-### Added — Perluasan agen Claude Code
-- **5 agen baru** di `.claude/agents/`, dipetakan ke tahapan kerja `CONTRIBUTING.md` dan proses
-  sistem app: `feature-architect` (Fase 1-2 — rancang scope/arsitektur sebelum kode, penolak
-  scope creep), `native-android-specialist` (Fase 3 lapisan native — memuat peta pipeline
-  MediaSession & seluruh jebakan yang pernah ditemukan audit agar tidak terulang),
-  `ui-craftsman` (Fase 3 lapisan UI — penjaga sistem desain Hutan Malam & aksesibilitas),
-  `test-engineer` (Fase 5 — unit test logic murni + pola simulasi Node saat vitest belum
-  terinstall), dan `scribe` (pencatat perubahan yang dilakukan agen lain ke CHANGELOG +
-  penjaga sinkronisasi seluruh dokumentasi GitHub; append-only terhadap riwayat, dilarang
-  menyentuh kode aplikasi).
-- `CLAUDE.md` diperbarui: daftar agen kini memuat pemetaan fase + alur lengkap satu fitur
-  (architect → implementer → reviewer → test → scribe).
-
 ### Changed — Redesign UI "Hutan Malam"
 - **Palet baru hijau lumut + emas kuningan** menggantikan plum/amber (nilai token di
   `tailwind.config.js`; nama token tidak berubah sehingga seluruh className lama tetap jalan).
@@ -1695,12 +1681,6 @@ tetap menghitung mundur untuk scrobble):
   test masih hijau. Konsistensi lintas-file (nama prefs ↔ backup rules, channel ID) terkonfirmasi.
 
 ### Added — Open source & positioning
-- **Konfigurasi Claude Code** (`CLAUDE.md` + `.claude/`) mengikuti metode
-  [everything-claude-code](https://github.com/WorldFlowAI/everything-claude-code): rules yang selalu
-  ditegakkan (keamanan, review 5 putaran, prinsip ringan, kejujuran status), slash commands
-  (`/audit`, `/sanity-check`, `/feature`, `/release`), dan agents (`code-reviewer`,
-  `security-reviewer`). Ini mengubah proses yang selama pengembangan dijalankan manual menjadi
-  konfigurasi yang otomatis dirujuk Claude Code di sesi berikutnya.
 - **Lisensi GPL-3.0** (`LICENSE`) — Scrola resmi dijadikan proyek open source. Copyleft dipilih
   agar turunan tetap terbuka, sejalan dengan posisi melawan Pano Scrobbler yang juga GPL.
 - Berkas kelengkapan open source: `SECURITY.md` (kebijakan pelaporan kerentanan),

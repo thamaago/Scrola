@@ -282,8 +282,8 @@ export interface MaybeScrobbleInput {
  * KENAPA TERPUSAT: sebelumnya jalur scrobble hanya ada di useNowPlaying yang mendengarkan event
  * plugin NowPlaying (deteksi eksternal). Player internal mengirim event lewat plugin Player yang
  * BERBEDA (playerPositionChanged) dan tidak pernah tersambung ke sini — sehingga lagu yang diputar
- * di dalam Scrola sendiri TIDAK PERNAH tercatat. Itu melanggar prinsip inti "satu pipeline" yang
- * tercatat di CLAUDE.md. Fungsi ini menyatukan keduanya: siapa pun sumbernya, aturan eligibility,
+ * di dalam Scrola sendiri TIDAK PERNAH tercatat. Itu melanggar prinsip inti "satu pipeline"
+ * proyek. Fungsi ini menyatukan keduanya: siapa pun sumbernya, aturan eligibility,
  * guard anti-dobel, dan enqueue-nya identik.
  *
  * @returns true kalau baru saja di-enqueue, false kalau belum memenuhi syarat atau sudah tercatat.

@@ -6,7 +6,7 @@ import SecureStore from './secureStore';
  * Preferensi app yang TIDAK sensitif (mis. toggle "Scrobble dari app lain"). Sengaja memakai
  * plugin SecureStore yang SUDAH ada alih-alih menambah dependensi @capacitor/preferences —
  * paket itu sempat dihapus dari package.json karena tidak terpakai, dan menambahkannya kembali
- * hanya untuk satu boolean bertentangan dengan prinsip "ringan" (lihat .claude/rules/ringan-dan-fokus.md).
+ * hanya untuk satu boolean bertentangan dengan prinsip "ringan" proyek.
  * Overhead enkripsi Keystore untuk satu nilai boolean dapat diabaikan.
  *
  * Nilai di-cache di memori supaya scrobbleEngine (yang membacanya di jalur panas setiap event

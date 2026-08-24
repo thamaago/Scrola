@@ -6,7 +6,7 @@
  * Dipisah jadi modul sendiri karena dipakai di DUA layar (Pengaturan & Sekarang). Kalau
  * daftarnya diduplikasi, cepat atau lambat keduanya akan berbeda — mis. satu layar menampilkan
  * "YouTube Music" sementara layar lain menampilkan package mentah untuk app yang sama.
- * Satu sumber kebenaran, sesuai .claude/rules/review-5-putaran.md soal duplikasi aturan.
+ * Satu sumber kebenaran, untuk menghindari duplikasi aturan.
  */
 
 const SOURCE_LABELS: Record<string, string> = {

@@ -25,3 +25,6 @@ keystore.properties
 # Log & sementara
 *.log
 .DS_Store
+
+# Folder penampung file yang ditandai untuk dihapus (jangan di-commit)
+_to_delete/
