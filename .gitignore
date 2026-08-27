@@ -21,6 +21,9 @@ branding/preview/
 *.keystore
 *.jks
 keystore.properties
+# Kecuali keystore DEBUG tetap (bukan rahasia; alias androiddebugkey) — wajib ter-commit agar
+# CI bisa menandatangani APK debug secara konsisten. JANGAN pernah kecualikan keystore RILIS.
+!native-overlay/android/scrola-debug.keystore
 
 # Log & sementara
 *.log
