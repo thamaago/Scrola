@@ -3,7 +3,7 @@
 ![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)
 ![Platform: Android](https://img.shields.io/badge/Platform-Android%206.0%2B-green.svg)
 ![Status: Pre-release](https://img.shields.io/badge/Status-0.1.0%20pre--release-orange.svg)
-[![Build Status](https://github.com/<username>thamaago/scrola/actions/workflows/build.yml/badge.svg)](https://github.com/<username>thamaago/scrola/actions/workflows/build.yml)
+[![Build Status](https://github.com/thamaago/scrola/actions/workflows/build.yml/badge.svg)](https://github.com/thamaago/scrola/actions/workflows/build.yml)
 
 > Ganti `<username>` di badge Build Status di atas dengan username GitHub-mu setelah repo dibuat —
 > badge ini otomatis menampilkan hijau/merah sesuai status build CI terakhir.
