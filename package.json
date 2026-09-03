@@ -15,18 +15,18 @@
     "native:overlay": "node scripts/apply-native-overlay.cjs"
   },
   "dependencies": {
-    "@capacitor/android": "^6.1.2",
-    "@capacitor/app": "^6.0.1",
-    "@capacitor/browser": "^6.0.2",
-    "@capacitor/core": "^6.1.2",
-    "@capacitor/splash-screen": "^6.0.3",
-    "@capacitor-community/sqlite": "^6.0.2",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor-community/sqlite": "^8.1.1",
     "md5": "^2.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "^6.1.2",
+    "@capacitor/cli": "^8.5.0",
     "@types/md5": "^2.3.5",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.5",
