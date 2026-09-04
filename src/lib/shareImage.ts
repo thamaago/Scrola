@@ -15,7 +15,7 @@ import { tActive } from './i18n';
  * Digambar dengan Canvas API BAWAAN browser — sengaja TANPA library seperti html2canvas
  * (≈200KB, dan hasilnya sering meleset untuk efek kustom seperti perforasi kita). Menggambar
  * manual justru memberi kontrol penuh atas hasil akhir, dan nol dependensi baru — sesuai
- * prinsip "ringan" proyek.
+ * .claude/rules/ringan-dan-fokus.md.
  *
  * Album art datang sebagai data URI base64 dari PlayerPlugin, jadi menggambarnya ke canvas TIDAK
  * membuat canvas ter-taint (beda dengan gambar dari URL lintas-domain) — toDataURL() tetap boleh

@@ -3,7 +3,7 @@
 ![License: GPL-3.0](https://img.shields.io/badge/License-GPLv3-blue.svg)
 ![Platform: Android](https://img.shields.io/badge/Platform-Android%206.0%2B-green.svg)
 ![Status: Pre-release](https://img.shields.io/badge/Status-0.1.0%20pre--release-orange.svg)
-[![Build Status](https://github.com/thamaago/scrola/actions/workflows/build.yml/badge.svg)](https://github.com/thamaago/scrola/actions/workflows/build.yml)
+[![Build Status](https://github.com/<username>/scrola/actions/workflows/build.yml/badge.svg)](https://github.com/<username>/scrola/actions/workflows/build.yml)
 
 > Ganti `<username>` di badge Build Status di atas dengan username GitHub-mu setelah repo dibuat —
 > badge ini otomatis menampilkan hijau/merah sesuai status build CI terakhir.
@@ -39,6 +39,25 @@ dengan riwayat scrobble bergaya "tiket cerita".
 > - [`docs/PANDUAN_API_KEY.md`](./docs/PANDUAN_API_KEY.md) — **panduan langkah-demi-langkah
 >   memasang API key Last.fm**, ditulis untuk orang awam. Wajib dibaca kalau kamu membangun
 >   Scrola sendiri dari kode sumber. (Kalau kamu hanya memakai APK rilis, kamu tidak butuh ini.)
+> - [`CLAUDE.md`](./CLAUDE.md) — konteks proyek untuk Claude Code (baca lebih dulu bila memakai
+>   Claude Code untuk mengembangkan Scrola).
+
+## Dikembangkan dengan Claude Code
+
+Repositori ini disusun mengikuti metode [everything-claude-code](https://github.com/WorldFlowAI/everything-claude-code):
+konfigurasi Claude Code (rules, commands, agents) yang menegakkan proses pengembangan Scrola secara
+otomatis. Kalau kamu memakai Claude Code:
+
+- **`CLAUDE.md`** (root) — konteks utama proyek: arsitektur, batasan lingkungan, aturan tak-boleh-dilanggar.
+- **`.claude/rules/`** — panduan yang selalu ditegakkan: keamanan, review 5 putaran, prinsip ringan,
+  kejujuran status.
+- **`.claude/commands/`** — slash command: `/audit` (review 5 putaran), `/sanity-check`, `/feature`
+  (alur fitur baru), `/release`.
+- **`.claude/agents/`** — subagen: `code-reviewer`, `security-reviewer`.
+
+Struktur ini membuat proses yang selama pengembangan dijalankan manual (ritual audit 5 putaran,
+prinsip ringan, kejujuran soal validasi) jadi bagian tetap yang otomatis dirujuk Claude Code pada
+sesi-sesi berikutnya.
 
 ## Lisensi & open source
 
@@ -60,8 +79,8 @@ positioning: alternatif yang indah, ringan, dan bisa dipercaya.
 Ini adalah **scaffold fase 1–2** (scope + arsitektur + skeleton awal) dari metodologi 5 fase:
 scope → arsitektur → build bertahap → feedback loop → hardening. Semua file sudah bisa
 di-build, tapi beberapa bagian masih placeholder yang ditandai `TODO` — dirancang supaya kita
-bisa lanjut membangun fitur demi fitur berdasarkan hasil build nyata dari CI (Android SDK tidak
-dijalankan langsung saat menyusun scaffold ini, jadi log GitHub Actions adalah sumber kebenaran build).
+bisa lanjut membangun fitur demi fitur berdasarkan hasil build nyata dari CI (saya tidak bisa
+menjalankan Android SDK langsung, jadi log GitHub Actions adalah sumber kebenaran seperti biasa).
 
 ## Langkah setup wajib sebelum build pertama
 
@@ -118,11 +137,12 @@ implementation "com.mpatric:mp3agic:0.9.1"
 **Catatan jujur soal `mp3agic`** (dipakai `Mp3MetadataPlugin.kt` untuk baca/tulis tag ID3):
 Android tidak punya API bawaan untuk MENULIS tag ID3 (`MediaMetadataRetriever` cuma bisa baca),
 jadi dipakai library eksternal ringan pure-Java ini. Kode plugin ditulis berdasarkan bentuk API
-mp3agic 0.9.1, TAPI belum pernah dikompilasi terhadap toolchain Android/Gradle nyata. Kalau
-`gradle build` gagal spesifik di `Mp3MetadataPlugin.kt` dengan error "unresolved reference" pada
-method seperti `albumArtist` atau `genreDescription`, itu kemungkinan besar karena nama method
-sedikit berbeda di versi mp3agic yang benar-benar ter-resolve — cek langsung Javadoc
-`com.mpatric.mp3agic.ID3v24Tag` untuk nama method yang tepat.
+mp3agic 0.9.1 yang saya ingat, TAPI belum pernah benar-benar dikompilasi di sesi ini (tidak ada
+Android SDK/Gradle toolchain nyata di environment saya). Kalau `gradle build` gagal spesifik di
+`Mp3MetadataPlugin.kt` dengan error "unresolved reference" pada method seperti `albumArtist` atau
+`genreDescription`, itu kemungkinan besar karena nama method sedikit berbeda di versi mp3agic
+yang benar-benar ter-resolve — cek langsung Javadoc `com.mpatric.mp3agic.ID3v24Tag` untuk nama
+method yang tepat, dan kirim saya error log-nya untuk diperbaiki.
 
 Terakhir, sinkronkan aset web + commit:
 
@@ -219,8 +239,8 @@ supaya konsisten dan mudah di-regenerate kalau brand berubah.
   `capacitor.config.ts` dengan warna latar `#1C1420` senada (mencegah kedipan putih sebelum
   splash muncul di sebagian perangkat)
 
-**Perlu diverifikasi setelah `npx cap add android`** (satu-satunya bagian yang tidak bisa
-dipastikan 100% tanpa Android SDK sungguhan): Capacitor menaruh referensi splash screen di
+**Perlu diverifikasi setelah `npx cap add android`** (satu-satunya bagian yang saya tidak bisa
+pastikan 100% tanpa Android SDK sungguhan): Capacitor menaruh referensi splash screen di
 `res/drawable/splash.xml` (layer-list) atau langsung `res/drawable/splash.png` tergantung versi
 template. Setelah `npm run native:overlay`, buka `android/app/src/main/res/drawable/` — kalau ada
 `splash.xml` yang mereferensikan bitmap dengan nama lain, sesuaikan referensinya ke `splash.png`
@@ -300,12 +320,13 @@ buildTypes {
 Semua fungsi inti (auth, deteksi now-playing, scrobble, queue offline, foreground service,
 player internal) sudah ada. Sisanya bersifat polish:
 
-1. Penyempurnaan ikon app & splash screen bila diperlukan — aset dasar sudah dibuat terprogram
-   dan bisa diregenerasi lewat script di `branding/` (lihat bagian "Branding & ikon app").
+1. Ikon app & splash screen dengan identitas Scrola (butuh aset gambar — belum bisa saya
+   generate sebagai file PNG/adaptive icon asli dari sini, tapi bisa saya bantu buat konsepnya
+   kalau kamu sudah punya alat desain, atau kita generate via AI image lain).
 2. Layar "pilih track dari riwayat untuk diputar ulang" (opsional, saat ini player hanya
    mendukung 1 track terpilih dalam sesi, tanpa playlist/queue).
 3. Uji nyata di device fisik lewat APK hasil CI — ini yang paling penting sekarang. Kalau ada
-   error build atau crash saat dipakai, kumpulkan log/`adb logcat`-nya untuk diperbaiki.
+   error build atau crash saat dipakai, kirim log/`adb logcat`-nya dan saya perbaiki.
 
 Fokus sekarang: pastikan langkah "Build Android" di atas berhasil sampai APK ter-upload di
 GitHub Actions. Kalau ada error di step manapun, kirim log lengkapnya.
@@ -319,7 +340,7 @@ file lain yang tidak sedang aktif).
 
 **Cara kerja teknis:** Android tidak punya API bawaan untuk MENULIS tag ID3 (`MediaMetadataRetriever`
 cuma bisa baca), jadi dipakai library `mp3agic` (pure-Java, ringan, tidak perlu kompilasi native).
-Karena file dipilih lewat Storage Access Framework, alurnya: salin ke berkas sementara di
+Karena file dipilih lewat Storage Access Framework, alurnya: salin ke file sementara di
 cache app → baca/tulis tag pakai mp3agic → salin hasilnya balik ke file asli lewat
 `ContentResolver.openOutputStream` → hapus file sementara. File asli di penyimpanan device
 benar-benar berubah, bukan cuma salinan di dalam app.
@@ -328,10 +349,11 @@ benar-benar berubah, bukan cuma salinan di dalam app.
 - Butuh izin **tulis** (bukan cuma baca) ke file — beberapa provider penyimpanan (mis. folder
   yang di-sync cloud storage tertentu, atau device dengan storage terenkripsi khusus vendor)
   bisa saja menolak permintaan write meski sudah lewat picker sistem.
-- Kode `Mp3MetadataPlugin.kt` ditulis berdasarkan bentuk API mp3agic 0.9.1, **belum pernah
-  dikompilasi** terhadap toolchain Android/Gradle nyata. Kalau build gagal di file ini dengan
-  error "unresolved reference" pada method seperti `albumArtist`/`genreDescription`, cek Javadoc
-  `com.mpatric.mp3agic.ID3v24Tag` untuk nama method yang tepat.
+- Kode `Mp3MetadataPlugin.kt` ditulis berdasarkan bentuk API mp3agic 0.9.1 dari ingatan, **belum
+  pernah benar-benar dikompilasi** di sesi ini (tidak ada toolchain Android/Gradle nyata di
+  environment saya). Kalau build gagal di file ini dengan error "unresolved reference" pada
+  method seperti `albumArtist`/`genreDescription`, cek Javadoc `com.mpatric.mp3agic.ID3v24Tag`
+  untuk nama method yang tepat dan kirim saya log errornya.
 - Kalau tag ID3 yang ada sebelumnya bukan versi 2.4 (mis. masih ID3v2.3 lama), menyimpan akan
   menuliskannya ulang sebagai ID3v2.4 — field di luar 6 yang ada di form (judul/artist/album/
   album artist/tahun/genre/sampul) mungkin tidak ikut terbawa. Ini simplifikasi yang disengaja
@@ -531,4 +553,4 @@ bisa disalahgunakan app lain di perangkat yang sama untuk mengirim token palsu �
 query string URL sekarang tidak pernah dipercaya, hanya dipakai sebagai sinyal "user kembali
 dari browser"; token asli yang dipakai selalu yang kita minta sendiri.
 
-Detail lengkap tercatat di CHANGELOG. Semua perbaikan sudah masuk ke kode.
+Detail lengkap ada di riwayat percakapan. Semua perbaikan sudah masuk ke kode di zip ini.

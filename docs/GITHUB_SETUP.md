@@ -1,8 +1,8 @@
 # Setup GitHub — Checklist Manual
 
 Berkas ini mendaftar **semua langkah yang HANYA bisa dilakukan lewat akun/UI GitHub asli** —
-tidak ada satu pun yang bisa diotomasi dari scaffold ini karena butuh akses akun GitHub langsung.
-Ikuti urut dari atas ke bawah saat pertama kali mempublikasikan Scrola.
+tidak ada satu pun yang bisa saya (Claude) lakukan dari sini karena environment ini tanpa akses
+GitHub API/network. Ikuti urut dari atas ke bawah saat pertama kali mempublikasikan Scrola.
 
 ## 1. Buat repositori
 
