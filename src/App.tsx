@@ -1,37 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { logValidationChecklist } from './lib/validationChecklist';
-import { useI18n } from './lib/i18nContext';
 import LoginScreen from './screens/LoginScreen';
 import NowPlayingScreen from './screens/NowPlayingScreen';
+import LibraryScreen from './screens/LibraryScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import SisiBScreen from './screens/SisiBScreen';
 import TiketKoleksiScreen from './screens/TiketKoleksiScreen';
 import BabAlbumScreen from './screens/BabAlbumScreen';
-import PenemuanScreen from './screens/PenemuanScreen';
 import { loadSession } from './lib/secureStore';
 import { useNowPlayingListener, drainAndFlushNative } from './hooks/useNowPlaying';
+import { useMusicQueue } from './hooks/useMusicQueue';
 import { App as CapApp } from '@capacitor/app';
 import { useScrobbleHistory } from './hooks/useScrobbleHistory';
 import { flushQueue } from './lib/scrobbleEngine';
 
 const TABS = [
-  ['now', 'nav.now'],
-  ['history', 'nav.history'],
-  ['settings', 'nav.settings'],
+  ['now', 'Sekarang'],
+  ['history', 'Riwayat'],
+  ['settings', 'Atur'],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
 
 export default function App() {
-  const { t: tr } = useI18n();
   const [username, setUsername] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [tab, setTab] = useState<Tab>('now');
   const [sisiBOpen, setSisiBOpen] = useState(false);
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [babAlbumOpen, setBabAlbumOpen] = useState(false);
-  const [penemuanOpen, setPenemuanOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const queue = useMusicQueue();
   // id entri riwayat yang BARU tercatat — untuk border amber + animasi masuk di HistoryScreen.
   const [freshScrobbleId, setFreshScrobbleId] = useState<number | null>(null);
   const prevTopIdRef = useRef<number | null>(null);
@@ -53,28 +52,17 @@ export default function App() {
       .finally(() => {
         setCheckingSession(false);
       });
-    logValidationChecklist();
   }, []);
 
   // Sinkronisasi scrobble: serap yang ditangkap NATIVE di latar (Opsi 2), kirim sisa antrean,
   // lalu muat ulang riwayat. Native menangkap lagu walau app tertutup; JS mengirimnya saat aktif.
-  const syncingRef = useRef(false);
   const syncScrobbles = useCallback(async () => {
-    // Cegah tumpang-tindih dengan diri sendiri. syncScrobbles dipicu dari beberapa tempat (buka app,
-    // kembali foreground, timer 20 dtk) yang bisa berdekatan. Tanpa guard ini, sync #2 bisa memanggil
-    // flushQueue SELAGI drain #1 masih meng-enqueue → flush menyela di tengah drain → batch terpecah
-    // (mis. "KIRIM 2" lalu "KIRIM 3") dan track dikirim ulang. drain+flush harus satu unit atomik.
-    // (drainAll native sendiri sudah atomik, jadi ini murni soal menjaga batch tetap utuh.)
-    if (syncingRef.current) return;
-    syncingRef.current = true;
     try {
       await drainAndFlushNative();
       await flushQueue();
       await reloadHistory();
     } catch (e) {
       console.warn('Sinkronisasi scrobble gagal:', e);
-    } finally {
-      syncingRef.current = false;
     }
   }, [reloadHistory]);
 
@@ -156,7 +144,14 @@ export default function App() {
             }}
             aria-hidden={!isActive}
           >
-            {t === 'now' && <NowPlayingScreen onScrobbled={handleScrobbled} current={current} />}
+            {t === 'now' && (
+              <NowPlayingScreen
+                onScrobbled={handleScrobbled}
+                current={current}
+                onOpenLibrary={() => setLibraryOpen(true)}
+                queue={queue}
+              />
+            )}
             {t === 'history' && (
               <HistoryScreen
                 items={historyItems}
@@ -185,14 +180,17 @@ export default function App() {
         open={sisiBOpen}
         onClose={() => setSisiBOpen(false)}
         onOpenBabAlbum={() => setBabAlbumOpen(true)}
-        onOpenPenemuan={() => setPenemuanOpen(true)}
       />
 
       {/* Overlay Bab (bulan) & Album (tahun) */}
       <BabAlbumScreen open={babAlbumOpen} onClose={() => setBabAlbumOpen(false)} />
 
-      {/* Overlay Penemuan — linimasa artis yang ditemukan */}
-      <PenemuanScreen open={penemuanOpen} onClose={() => setPenemuanOpen(false)} />
+      {/* Overlay Pustaka musik lokal (pemutar sungguhan) */}
+      <LibraryScreen
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        onPlayQueue={queue.playList}
+      />
 
       {/* Overlay Koleksi Tiket */}
       <TiketKoleksiScreen open={ticketsOpen} onClose={() => setTicketsOpen(false)} />
@@ -205,7 +203,7 @@ export default function App() {
             className="flex-1 py-3.5 text-sm font-body"
             style={{ color: tab === t ? '#D6A756' : '#8FA394', transition: 'color 0.25s ease' }}
           >
-            {tr(label)}
+            {label}
           </button>
         ))}
         {/* Indikator garis atas — meluncur mengikuti tab aktif */}

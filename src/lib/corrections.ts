@@ -62,6 +62,16 @@ export function upsertRule(rules: CorrectionRule[], from: NamePair, to: NamePair
   return next.slice(0, MAX_CORRECTION_RULES);
 }
 
+/** Buang aturan berdasarkan kunci `from`. Murni (mengembalikan array baru). */
+export function removeRule(
+  rules: CorrectionRule[],
+  fromArtist: string,
+  fromTrack: string
+): CorrectionRule[] {
+  const key = matchKey(fromArtist, fromTrack);
+  return rules.filter((r) => matchKey(r.fromArtist, r.fromTrack) !== key);
+}
+
 /** Terapkan aturan yang cocok (kalau ada) ke sepasang (artist, track). Murni. */
 export function applyCorrection(input: NamePair, rules: CorrectionRule[]): NamePair {
   const key = matchKey(input.artist, input.track);
@@ -71,23 +81,4 @@ export function applyCorrection(input: NamePair, rules: CorrectionRule[]): NameP
     }
   }
   return input;
-}
-
-/**
- * Gabungkan aturan koreksi dari backup ke aturan lokal — NON-DESTRUKTIF: aturan lokal untuk kunci
- * `from` yang sama DIPERTAHANKAN (tidak ditimpa data masuk), aturan `from` baru ditambahkan. Dipakai
- * saat restore agar koreksi buatan pengguna ikut ter-backup tanpa menghapus yang sudah ada.
- */
-export function mergeCorrections(local: CorrectionRule[], incoming: CorrectionRule[]): CorrectionRule[] {
-  const keyOf = (r: CorrectionRule) => matchKey(r.fromArtist, r.fromTrack);
-  const seen = new Set(local.map(keyOf));
-  const merged = [...local];
-  for (const r of incoming) {
-    const k = keyOf(r);
-    if (!seen.has(k)) {
-      seen.add(k);
-      merged.push(r);
-    }
-  }
-  return merged;
 }

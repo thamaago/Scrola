@@ -6,6 +6,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- WAKE_LOCK: agar CPU tetap bangun saat memutar musik dengan layar mati/perangkat idle —
+         tanpa ini ExoPlayer tak memegang wake lock sehingga audio tersendat & berhenti mendadak
+         sebelum lagu selesai. Dipakai lewat setWakeMode(WAKE_MODE_LOCAL) di PlaybackService. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- READ_MEDIA_AUDIO (Android 13+/API 33): memindai pustaka musik lokal perangkat (MediaStore)
+         untuk fitur pemutar sungguhan. READ_EXTERNAL_STORAGE (maxSdk 32) sebagai jalur lawas.
+         Berbeda dari pemilihan file SAF (pickAndPlay) yang tak butuh izin. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
     <!-- mediaPlayback: untuk PlaybackService (player internal yang benar-benar memutar audio) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- dataSync: untuk ScrobbleForegroundService (mendeteksi & MENGIRIM scrobble ke Last.fm,

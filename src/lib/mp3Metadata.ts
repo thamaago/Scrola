@@ -29,7 +29,6 @@ export interface SaveMp3MetadataOptions {
 
 export interface Mp3MetadataPluginInterface {
   pickMp3ToEdit(): Promise<Mp3Metadata>;
-  readMetadata(options: { uri: string }): Promise<Mp3Metadata>;
   pickAlbumArtImage(): Promise<{ albumArt: string }>;
   saveMetadata(options: SaveMp3MetadataOptions): Promise<void>;
 }

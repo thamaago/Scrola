@@ -17,620 +17,335 @@ tooling).
 
 ## [Unreleased]
 
-### Internal — verifikasi kelengkapan i18n (8 bahasa benar-benar utuh)
-Menambah `i18nCompleteness.test.ts` sebagai penjaga permanen bahwa SETIAP bahasa terimplementasi
-penuh — bukan sekadar "test lain hijau". Empat lapis pemeriksaan:
-- **Registrasi konsisten:** tiap locale di `LOCALES` punya tag BCP-47 valid, kamus terisi (>250 kunci),
-  kategori jamak dideklarasikan, dan `pluralCategory` selalu menghasilkan kategori yang dideklarasikan
-  (dicek untuk n = 0,1,2,5,11,21,22,100).
-- **Paritas kunci penuh:** ke-8 locale menutup basis id tanpa kunci hilang/asing (via audit).
-- **Paritas PLACEHOLDER:** tiap terjemahan memakai persis `{param}` yang sama dengan basis — menangkap
-  `{count}` yang hilang atau typo (`{cont}`) yang tak terdeteksi audit. **0 ketidakcocokan** di 8 bahasa.
-- **Deteksi teks tertinggal:** tak ada nilai non-id yang identik dengan Indonesia sambil mengandung
-  huruf (kecuali istilah serumpun: Album/Artist/Genre/Scrobble/Serial). Membuktikan tak ada kalimat
-  Indonesia yang lupa diterjemahkan.
-- Dikonfirmasi juga: **tak ada string hardcoded** tersisa di layar/komponen (semua lewat `t()`), dan
-  teks gambar-bagikan Canvas semuanya lewat `tActive` (hanya glyph '♪' yang literal).
-- Hasil: `npm test` **337 hijau**, `tsc` 0, `vite build` sukses. Semua 8 bahasa lolos keempat lapis.
-- **Yang MASIH belum "selesai" (jujur):** (a) mutu terjemahan pt/de/fr/ru/ja/es = AI, belum ditinjau
-  penutur asli; (b) belum tervalidasi di device (Gradle/CI + HP fisik, termasuk render Kiril/CJK di
-  Canvas & kelengkapan data ICU per-locale). Utuh secara STRUKTUR & CAKUPAN — belum secara mutu-native
-  & device.
+### Added — album art (disc besar) di pemutar antrean, on-demand & hemat
+- Pemutar antrean kini menampilkan **sampul lagu** yang sedang diputar sebagai **disc vinyl 240px**
+  (lebih besar dari disc 190px pemutar lama), berputar saat playing, dengan placeholder ♪ bila tak
+  ada art. Identitas vinyl dipertahankan, ukuran ditingkatkan sesuai permintaan.
+- **On-demand & hemat:** `PlayerPlugin.getAlbumArt(uri)` mengambil art SATU lagu (reuse
+  `extractMetadataFromUri`: embedded picture + `ImageUtils.downscaleIfNeeded` + base64), BUKAN
+  mem-base64 art seluruh pustaka saat scan (yang akan boros memori/payload). `useMusicQueue`
+  mengambilnya saat track berganti (`currentArt`, dibatalkan bila cepat berganti). JS: `getAlbumArt`
+  di interface + helper `fetchAlbumArt` (aman di web → null).
+- Verifikasi: PlayerPlugin brace/paren OK, tsc bersih, 197 tes, build sukses, balanced, mockup
+  mengonfirmasi disc + semua elemen muat tanpa sesak. **Native — terbukti di perangkat.**
 
-### Added — bahasa ke-8: Español (Spanyol) — jangkauan terluas (LatAm + Spanyol)
-- **Spanyol (`es`)** ditambahkan penuh. Bukan tantangan struktur baru (jamak one/other seperti en),
-  melainkan **jangkauan maksimum**: Spanyol + seluruh Amerika Latin (Meksiko, Argentina, Chile, dll —
-  banyak pasar Last.fm besar). Dengan Inggris+Spanyol+Portugis(BR), Scrola kini menutup mayoritas
-  pengguna Last.fm Amerika.
-- **BCP-47 `es-419`** (Spanyol Amerika Latin) dipilih, bukan `es-ES` — memakai pemisah ribuan koma
-  ("1,234,567") yang mewakili audiens Spanyol terbesar; kosakata netral-LatAm ("entrada" untuk tiket).
-- Registrasi `i18n.ts`; kamus `locales/es.ts` **paritas 100% dengan id** (audit). Tanggal via Intl
-  ("mayo"、"lun"、"9 may 2024"). Trato informal ("tú").
-- **Review 5 putaran (ringkas):** korektnes — audit paritas 8 locale + integrasi es (jamak one/other,
-  durasi, `resolveLocale('es-419'/'es-MX')`); state — nihil; error — semua `err.*` es; WebView — Intl
-  `es-419` (perlu validasi ICU device); aman — nihil.
-- Terjemahan AI berkualitas tinggi, belum ditinjau penutur asli.
-- `npm test` hijau (**333**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
 
-### Added — bahasa ke-7: 日本語 (Jepang) — aksara CJK + kalimat verba-akhir (SOV)
-- **Jepang (`ja`)** ditambahkan penuh. Jepang pasar Last.fm yang cukup besar; membawa dua tantangan
-  baru sekaligus: **aksara CJK** (Kanji/Hiragana/Katakana) dan **tata kalimat SOV** (verba di akhir).
-- **Jepang TANPA infleksi jamak** — satu bentuk saja (`other`), persis seperti Indonesia. Membuktikan
-  infra jamak menampung rentang penuh: 1-bentuk (id/ja) · 2-bentuk (en/de/pt/fr) · 3-bentuk (ru).
-  `PLURAL_RULES.ja = () => 'other'`. "1曲"/"5曲" bentuknya sama.
-- **Perbaikan arsitektur untuk penutup kalimat CJK:** subtitle Bab/Album dulu memaku "." di JSX.
-  Ditambah kunci `bab.subtitle.post` (Latin = "."; ja = "。") — sejajar dengan `bab.hero.post` (de/ja).
-  Kini kalimat Jepang berakhir dengan「。」yang benar. Hero verba-akhir juga alami:
-  「5月は、」+「210曲」+「を再生しました。」.
-- Registrasi `i18n.ts` + BCP-47 `ja-JP`; kamus `locales/ja.ts` **paritas 100% dengan id** (audit).
-  Angka/tanggal `ja-JP` via Intl ("1,234,567"、"5月"、曜日 "月火水…"、"2024年5月9日")；`hg.monthYear`
-  di-override jadi urutan "{year}年{month}".
-- **Review 5 putaran (ringkas):** korektnes — audit paritas 7 locale + integrasi ja (satu-bentuk,
-  verba-akhir, `resolveLocale('ja-JP')`); state — tak ada; error — semua `err.*` ja; WebView — Intl
-  `ja-JP` + render glyph CJK di Canvas perlu font fallback sistem (WAJIB validasi device); aman — nihil.
-- **Batas jujur ja:** (a) terjemahan AI, belum ditinjau penutur asli; (b) render teks CJK pada
-  GAMBAR-bagikan (Canvas) bergantung font CJK sistem — bisa jadi kotak-tofu jika absen (perlu cek HP);
-  (c) label sumbu sparkline mode "tahun" memakai huruf pertama nama bulan — untuk ja jadi digit (Okt/Nov/
-  Des → "1") — masalah kosmetik lama yang tak khusus ja, dicatat untuk perbaikan terpisah.
-- `npm test` hijau (**330**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+### Added — Catatan + Bagikan diporting ke pemutar antrean (kini setara-penuh dengan pemutar lama)
+- Melanjutkan penyatuan pemutar (opsi a: aditif dulu, tanpa menghapus). Pemutar antrean baru kini
+  memuat SEMUA kemampuan pemutar lama:
+  - **Catatan** — tombol "Tulis catatan" + `NoteEditor` untuk lagu antrean yang sedang diputar
+    (`saveOrHoldNote` pada artist/title `queue.currentTrack`). `noteDraft` kini juga dimuat dari
+    track antrean aktif (bukan hanya `player.track`). Ini inti "arsip kenangan".
+  - **Bagikan** — `handleShare` digeneralisasi menerima track opsional; cabang antrean membagikan
+    tiket lagu saat ini (`renderShareCard` + `SharePlugin`). Album art kosong untuk track pustaka
+    ditangani fallback renderShareCard.
+  - (Tiket-mencetak sudah lebih dulu diporting.)
+- Verifikasi: tsc bersih, 197 tes, build sukses, brace/paren balanced, mockup memvalidasi tata letak
+  (tiket + kontrol + catatan/bagikan muat tanpa sesak).
+- **Status:** pemutar baru sekarang fungsional-setara + lebih (antrean/gapless). Penghapusan pemutar
+  lama + alihkan "Pilih satu file" ke antrean = langkah FINAL yang dilakukan SETELAH pemutar baru
+  divalidasi di perangkat (agar tak menghapus pemutar kerja demi kode yang belum terbukti).
 
-### Added — bahasa ke-6: Русский (Rusia) — aksara Kiril + jamak TIGA bentuk (one/few/many)
-- **Rusia (`ru`)** ditambahkan penuh. Komunitas Last.fm Rusia secara historis sangat besar.
-  Lompatan teknis terbesar: aksara **Kiril** + **jamak 3-bentuk** (sebelumnya semua locale cuma 2).
-- **Bukti infra jamak benar-benar skalabel:** aturan Rusia (CLDR) memakai `one`/`few`/`many` —
-  1 трек, 2 трека, 5 треков, 21 трек, 22 трека, 25 треков, 11 треков. Ditambahkan
-  `LOCALE_PLURAL_CATEGORIES.ru = ['one','few','many']` + fungsi aturan `%10`/`%100`. `translatePlural`
-  yang sudah ada menanganinya **tanpa perubahan** — hanya butuh 3 kunci per grup jamak di kamus.
-  Test audit otomatis MEMAKSA ketiga bentuk ada untuk setiap grup (10 grup × 3 = 30 bentuk).
-- Registrasi `i18n.ts` + BCP-47 `ru-RU`; kamus `locales/ru.ts` **paritas 100% dengan id** (audit).
-  Angka/tanggal `ru-RU` via Intl ("1 234 567", "май", "пн").
-- **Kehati-hatian tata bahasa Rusia:** di mana kala lampau akan memaksa gender ("ты открыл/открыла"),
-  dipakai konstruksi impersonal netral ("Найдено {count} исполнителей") supaya tak berasumsi gender
-  pengguna. Sisa kala-lampau langka ditandai "(а)" (mis. "включил(а)").
-- **Review 5 putaran (ringkas):** korektnes — audit paritas 6 locale hijau + integrasi ru (one/few/many
-  utk 1/2/4/5/11/21/22/25, durasi, `resolveLocale('ru-RU')`); state — tak ada; error — semua `err.*`
-  ru; WebView — Intl `ru-RU` (perlu validasi ICU device); aman — tanpa perubahan izin/rahasia.
-- **Catatan mutu terjemahan:** kamus non-id/en (pt/de/fr/ru) dihasilkan AI berkualitas tinggi tapi
-  **belum ditinjau penutur asli** — Rusia paling perlu proofread karena tata bahasanya kompleks. Ini
-  bukan "selesai" sampai ditinjau + divalidasi device.
-- `npm test` hijau (**325**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
 
-### Added — bahasa ke-5: Français (Prancis) — aturan jamak berbeda (0 = tunggal)
-- **Prancis (`fr`)** ditambahkan penuh. Prancis pasar musik/Last.fm besar Eropa Barat berikutnya
-  setelah Jerman; bahasa Prancis juga berjangkauan luas (Prancis, Belgia, Swiss, Kanada-Québec, Afrika
-  frankofon). Catatan jujur: peringkat trafik Last.fm #6+ di balik paywall Similarweb, jadi Prancis
-  dipilih sebagai pasar Eropa besar berikutnya yang andal (bukan angka pasti).
-- Registrasi `i18n.ts` + BCP-47 `fr-FR`; kamus `locales/fr.ts` **paritas 100% dengan id** (audit).
-  Angka/tanggal `fr-FR` via Intl (mis. "1 234 567", "mai", "lun.").
-- **Menguji fleksibilitas pluralisasi:** aturan jamak Prancis berbeda dari en/de/pt — **0 DAN 1
-  keduanya tunggal** ("0 chanson", "1 chanson", "2 chansons"). Diterapkan `fr: n<2 ? 'one':'other'`
-  (sesuai CLDR fr) & diverifikasi test. Infra lama menampungnya tanpa perubahan struktural.
-- Detail Prancis via kunci sendiri: genderisasi artikel di `bab.noun` ("ce mois"/"cette année"),
-  `stats.plays` netral-gender ("{count} écoutes"), tutoiement ("tu") konsisten.
-- **Test baseline diperbarui:** `resolveLocale` dulu memakai `'fr'` sebagai contoh "tak dikenal";
-  karena fr kini didukung, contohnya diganti `'zz'` (kode yang memang tak akan pernah nyata).
-- **Review 5 putaran (ringkas):** korektnes — audit paritas 5 locale hijau + integrasi fr (termasuk
-  0→tunggal, durasi, `resolveLocale('fr-FR')`); state — tak ada; error — semua `err.*` fr; WebView —
-  Intl `fr-FR` (perlu validasi ICU device); aman — tanpa perubahan izin/rahasia.
-- `npm test` hijau (**321**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+### Added — ritual "cetak tiket" dibawa ke pemutar antrean baru (identitas dipertahankan)
+- Panggung tiket (identitas Scrola) sebelumnya hanya ada di pemutar lama satu-file. Kini disesuaikan
+  ke **pemutar antrean baru**: elemen tiket berperforasi menampilkan **"Mencetak tiket…"** dengan
+  progres menuju ambang scrobble track antrean yang sedang diputar, lalu **"Tiket tercetak ✓"** saat
+  lewat ambang. Progres dari posisi track saat ini (ambang via `scrobbleThresholdSec`); otomatis
+  reset saat track berganti. Milestone yang sama membentuk Koleksi Tiket (dari Riwayat) — jadi ritual
+  di pemutar dan koleksi kini konsisten di jalur baru.
+- Verifikasi: tsc bersih, 197 tes, build sukses, brace balanced, mockup memvalidasi tata letak.
+  **Render terbukti di perangkat.** Ini menutup alasan utama menahan penghapusan pemutar lama —
+  ritual tiket tak lagi eksklusif di sana; menyatukan penuh ke satu pemutar kini lebih aman
+  (menyisakan hanya kemampuan SAF "file arbitrer" untuk diputuskan).
 
-### Added — bahasa ke-4: Deutsch (Jerman) — pasar Last.fm berikutnya setelah Brasil
-- **Jerman (`de`)** ditambahkan penuh. Dasar: Jerman #4 trafik Last.fm (~5,9%, Similarweb Jan 2026),
-  pasar bahasa-baru berikutnya setelah AS/UK/Kanada (Inggris) & Brasil (pt).
-- Registrasi `i18n.ts` + BCP-47 `de-DE`; kamus `locales/de.ts` **paritas 100% dengan id** (dijamin
-  audit). Angka/tanggal `de-DE` via Intl (mis. "1.234.567,5", "Mai", "Mo").
-- **Perbaikan arsitektur untuk bahasa verba-akhir:** hero Bab/Album dulu memaku akhiran "." di JSX,
-  jadi kalimat Jerman ("Im Mai hast du 210 Songs **gespielt**.") — yang verbanya di AKHIR — mustahil
-  benar. Ditambah kunci `bab.hero.post` (id/en/pt = "."; de = " gespielt.") + layar memakainya. Kini
-  pola i18n menampung SOV/verba-akhir tanpa hack. Detail Jerman lain ditangani lewat kunci sendiri:
-  jamak datif "Von {count} Künstlern", artikel bergenre di `bab.noun` ("dieser Monat"/"dieses Jahr"),
-  jamak "Künstler" yang tak berubah.
-- Pemilih bahasa di Ajustes kini bisa **membungkus baris** (`flex-wrap`) karena sudah 4 opsi.
-- **Review 5 putaran (ringkas):** korektnes — audit paritas 4 locale hijau + integrasi de
-  (render/jamak/durasi/verba-akhir/`resolveLocale('de-DE')`); state — hanya `flex-wrap`; error — semua
-  `err.*` de; WebView — Intl `de-DE` (perlu validasi ICU device); aman — tanpa perubahan izin/rahasia.
-- `npm test` hijau (**317**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
 
-### Added — bahasa ke-3: Português (Brasil) — pasar scrobbler terbesar di luar Inggris
-- **Portugis Brasil (`pt`)** ditambahkan penuh. Dasar pemilihan: Brasil adalah negara #2 trafik
-  Last.fm (~11%, di bawah AS ~29%, di atas UK ~6% — Similarweb Jan 2026), komunitas non-Inggris
-  terbesar. Membuktikan fondasi i18n benar-benar skalabel: cukup **satu file kamus + 4 baris registrasi**.
-- Registrasi di `i18n.ts` (`LOCALES`/`Locale`/`PLURAL_RULES`/`LOCALE_PLURAL_CATEGORIES`) + tag BCP-47
-  `pt-BR` di `i18nFormat.ts`. Kamus lengkap `locales/pt.ts` — **paritas 100% dengan basis id**
-  (dijamin test audit; tak ada kunci hilang/asing), termasuk bentuk jamak `one/other`.
-- Pemilih bahasa di Ajustes otomatis menampilkan opsi ke-3 ("Português (Brasil)") lewat `LOCALES.map`;
-  deteksi otomatis dari bahasa perangkat (`navigator.language` `pt-BR` → `pt`) juga langsung jalan.
-- Nama bulan/hari, pemisah ribuan, dan tanggal mengikuti `pt-BR` via `Intl` (mis. "1.234.567",
-  "seg./ter./…", "maio"). Istilah domain "scrobble" dipertahankan; metafora tiket → "ingresso".
-- Catatan jamak: pt memakai 1 → tunggal, selain itu → jamak (termasuk "0 músicas") — pilihan pragmatis
-  & alami pt-BR, sedikit beda dari CLDR (yang menaruh 0 di kategori "one").
-- **Review 5 putaran (ringkas):** korektnes — audit paritas 3 locale hijau + test integrasi pt
-  (render/jamak/durasi/`resolveLocale('pt-BR')`); state — tak ada state baru, `LOCALES` menyetir picker
-  & auto-deteksi; error — semua `err.*` diterjemahkan pt; WebView — `Intl pt-BR` (perlu validasi ICU di
-  perangkat); aman — tak ada perubahan izin/rahasia.
-- `npm test` hijau (**313**), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+### Changed — hierarki pemutar lokal: pustaka jadi jalur UTAMA (kurangi kebingungan dua tombol)
+- Sebelumnya dua tombol serupa membingungkan: "Pilih Lagu dari Perangkat" (SAF, kuning menonjol,
+  pemutar lama satu-file) dan "Telusuri pustaka" (berbingkai, pemutar antrean baru). Kini dibalik:
+  **"Telusuri Musik" jadi tombol utama (kuning)** → pustaka + antrean gapless (pemutar baru), dan
+  **"Pilih satu file" jadi sekunder (berbingkai)** → SAF untuk file arbitrer.
+- **Belum dihapus (sengaja, butuh keputusan + validasi):** pemutar lama satu-file (panggung
+  "MENCETAK TIKET") + jalur SAF TIDAK dibuang, karena: (a) SAF bisa memutar file yang TIDAK terindeks
+  MediaStore (kemampuan unik), (b) panggung tiket adalah ritual identitas, (c) menghapus cabang
+  pemutar yang rumit itu tak bisa kuuji-render di sini. Menyatukan jadi SATU pemutar (alihkan SAF ke
+  antrean 1-lagu + buang pemutar lama + putuskan nasib ritual tiket) adalah langkah disengaja yang
+  disarankan SETELAH pemutar baru tervalidasi di perangkat.
+- Verifikasi: tsc bersih, 197 tes, build sukses.
 
-### Added — i18n "utuh": pesan error terlokalkan + SETIAP elemen ikut bahasa (crash screen & gambar)
-Melengkapi migrasi i18n: pesan error kini terjemah, dan celah "tidak ikut berganti bahasa" ditutup —
-termasuk layar crash & teks pada gambar-bagikan. Total **303 → 310 test** (7 test baru appError).
 
-- **Cermin locale tingkat-modul** (`getActiveLocale`/`setActiveLocale`/`tActive` di `i18n.ts`) —
-  inti agar KODE NON-REACT ikut bahasa aktif. `I18nProvider` menyinkronkannya sinkron saat render,
-  jadi `ErrorBoundary` (komponen class DI ATAS provider, tak punya context), renderer Canvas, dan
-  penerjemahan error semua memakai bahasa yang sama dengan UI.
-- **Error ditunda terjemahannya sampai titik tampil** (`appError.ts`): kelas `AppError {key, params}`
-  + `toErrDescriptor`/`errText`/`errTextFor`. Prinsip: lib/hook TIDAK lagi menyimpan teks jadi
-  (yang membeku pada bahasa saat error terjadi) — cukup bawa KUNCI; UI menerjemahkan saat render,
-  jadi ganti bahasa saat pesan sedang tampil pun ikut berubah. (`appError.test.ts`)
-  - `useMp3Editor` menyimpan kunci error (`err.mp3.*`), diterjemahkan di EditMetadata.
-  - `parseBackup` melempar `AppError` berkunci (`err.backup.*`, mis. baris rusak bawa nomor baris) →
-    Settings menerjemahkan via `errTextFor`.
-  - Login menyimpan error sebagai deskriptor `{key, params}` (bukan string); sebab teknis jaringan
-    dicatat ke console, ke pengguna tampil pesan bersih terlokalkan (bukan lagi pesan mentah lastfm).
-  - Toast "gagal siapkan gambar" (Now Playing & Sisi B) kini simpan kunci → live-switch.
-- **Layar crash (ErrorBoundary) ikut bahasa** — pakai `tActive('err.boundary.*')`.
-- **Teks pada GAMBAR-bagikan ikut bahasa** (Canvas): zine Sisi B (SISI B/RECAP MINGGUAN/LAGU MINGGU
-  INI/label statistik/nama hari/rentang minggu), kartu Now Playing ("SEDANG DIPUTAR", "TIKET №…"),
-  dan tiket koleksi (label jenis, tanggal, baris "lewat …") — lewat `tActive`/`getActiveLocale()` +
-  `formatMonth`/`formatWeekday`. Nama merek ("Scrola", "Every song leaves a story.") tetap.
-- **Menutup "batas yang diketahui" dari entri sebelumnya:** (a) ErrorBoundary ✔, (b) error hook/lib
-  (mp3, backup) ✔, (c) teks gambar-bagikan ✔. Sisa yang SENGAJA dibiarkan: string yang dilempar di
-  dalam `lastfm.ts` (hanya muncul di diagnostik/console teknis, bukan UI) & invarian internal scrobble.
-- **Review 5 putaran (ringkas):** korektnes — AppError/mirror/parseBackup teruji; state — cermin
-  di-set sinkron & idempotent (aman StrictMode), error tersimpan sbg kunci → live-switch; error —
-  fallback `err.generic`, sebab teknis tetap tercatat; WebView — hanya `Intl` aman + baca dict; aman —
-  parameter error dirender sbg teks (ter-escape / fillText), tanpa rahasia/permission baru.
-- `npm test` hijau (310), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device.**
+### Added — "Pemutar sungguhan" Tahap 5b: antrean tersambung ke layar Sekarang
+- `useMusicQueue` hook — state antrean aktif: JS memiliki URUTAN (shuffle) & MODE (repeat) lewat
+  `QueueState` (teruji), native memiliki RUNTIME (posisi) dan memancarkan `queueIndexChanged` yang
+  dicerminkan JS. `playList` (mulai antrean), `nextTrack`/`prevTrack` (skip native — satu sumber
+  runtime), `cycleRepeatMode` (+ setRepeatMode native), `toggleShuffleMode` (reorder murni lalu
+  terbitkan ulang antrean di track saat ini), `currentTrack`/`isActive`/`position`/`total`.
+- `NowPlayingScreen` kini punya cabang **pemutar antrean** (mengambil alih saat antrean aktif):
+  indeks "N/total", judul/artis, progress (dari usePlayer), dan kontrol shuffle·prev·play/pause·
+  next·repeat + tautan pustaka. `LibraryScreen` memutar lewat `onPlayQueue` (app-level) supaya
+  layar Sekarang mencerminkannya.
+- **Rantai penuh & terlihat:** telusuri pustaka → ketuk → antrean gapless → layar Sekarang
+  menampilkan trek berjalan + kontrol. Verifikasi: tsc bersih, 197 tes, build sukses, balanced,
+  mockup memvalidasi tata letak.
+- **Batas:** render + perilaku runtime (sinkron indeks, shuffle re-issue, repeat) hanya terbukti di
+  perangkat. Menyalakan shuffle memutar-ulang track saat ini dari awal (terbitkan-ulang antrean) —
+  poles kecil untuk nanti (pertahankan posisi lewat startPositionMs).
 
-### Added — multibahasa TUNTAS: infra i18n diperkuat + SEMUA layar & komponen dwibahasa
-Melanjutkan fondasi i18n di bawah. Kini seluruh UI benar-benar dwibahasa (id/en), bukan lagi hanya
-tab & label tiket. Semua fungsi baru murni & ber-TDD; total **275 → 303 test** (28 test i18n baru).
 
-- **Infra i18n diperkuat** (semua tanpa library, bundle tetap kecil):
-  - Pluralisasi (`translatePlural`, `pluralCategory`) — konvensi kunci `key.one`/`key.other`. id satu
-    bentuk, en one/other. Aturan ditulis sendiri (bukan `Intl.PluralRules`) agar deterministik lintas
-    WebView. (`i18nPlural.test.ts`)
-  - Format angka & tanggal per-locale via `Intl` bawaan — `i18nFormat.ts`: `formatNumber`, `formatDate`,
-    `formatMonth`, `formatDayMonthYear`, `formatWeekday` (Senin-dulu). Formatter di-cache. SENGAJA tidak
-    memakai `Intl.RelativeTimeFormat` (butuh WebView lebih baru) demi kompatibilitas. (`i18nFormat.test.ts`)
-  - Audit kelengkapan kunci — `i18nAudit.ts`: `auditDictionaries`/`auditLocale`, sadar-jamak. Test
-    menjamin `en` MENUTUPI penuh basis `id` (tak ada kunci hilang / kunci asing) → cegah drift kamus.
-    (`i18nAudit.test.ts`, `i18nIntegration.test.ts`)
-  - `useI18n()` kini mengekspos `t`, `tp` (jamak), `n` (angka), `d` (tanggal), `month`, `weekday`.
-- **Migrasi layar & komponen (bukti-kerja → tuntas):** LoginScreen, HistoryScreen, NowPlayingScreen,
-  PenemuanScreen, SisiBScreen, BabAlbumScreen, EditMetadataScreen, TiketKoleksiScreen, SettingsScreen,
-  serta komponen NoteEditor, StoryTicket, SeekTimeline — semua teks tampil, placeholder, pesan error UI,
-  dan `aria-label`-nya kini lewat `t()`/`tp()`. Kalimat naratif (Sisi B / Bab-Album) & hitungan pakai
-  interpolasi + jamak. Array nama bulan/hari lokal (BULAN/MONTH_SHORT/MONTH_LONG/HARI) DIHAPUS, diganti
-  `formatMonth`/`formatWeekday` (satu sumber, hemat baris).
-- **Lib ikut dilokalkan** (mundur-kompatibel, `locale` default `id` → test & pemanggil lama utuh):
-  `formatDurationHuman(sec, locale)`, `weekRangeLabel(sec, locale)`, dan label pengelompokan riwayat
-  (`groupHistoryByDay`/`groupHistoryByPeriod` — "Hari ini/Kemarin/Minggu ini/Bulan ini/…"). `DayGroup`
-  kini punya flag `isToday` supaya penyorotan UI tak lagi membandingkan string label.
-- **Review 5 putaran (ringkas):**
-  1. *Korektnes:* rantai fallback jamak & audit sadar-jamak diverifikasi via `i18nIntegration.test.ts`
-     (id 1 bentuk; en 1↔banyak beda). `formatMonth`/`formatWeekday` membungkus indeks di luar rentang.
-  2. *State:* nilai context di-`useMemo` pada `[locale]`; ganti bahasa me-render ulang. BabAlbum
-     menyimpan `monthIndex` (bukan nama jadi), jadi nama bulan ikut ganti saat locale berpindah tanpa
-     fetch ulang; SisiB menambah `locale` ke dep efek agar label minggu ikut menyegar.
-  3. *Error:* `translate`/`translatePlural` tak pernah melempar (fallback ke kunci). Formatter Intl
-     di-cache; tak ada promise baru tanpa catch.
-  4. *WebView:* hanya `Intl.NumberFormat`/`DateTimeFormat` (tersedia luas); `RelativeTimeFormat`
-     dihindari. **Perlu validasi device** untuk memastikan data ICU locale `id`/`en` lengkap di WebView.
-  5. *Keamanan:* interpolasi pakai split/join (bukan regex/eval); output dirender React sebagai teks
-     (ter-escape) → nama artis/lagu sebagai parameter aman. Tanpa rahasia/permission baru.
-- **Batas yang diketahui (jujur, belum dikerjakan):** (a) `ErrorBoundary` (layar crash) tetap Indonesia —
-  komponen class & sengaja tak bergantung pada i18n yang bisa jadi justru sumber crash-nya; (b) sebagian
-  pesan error dari hook/lib (`useMp3Editor`, `lastfm.ts`, parser backup) masih Indonesia saat
-  ditampilkan; (c) teks pada GAMBAR-bagikan (zine Sisi B & stub tiket via Canvas) tetap Indonesia —
-  pipeline render terpisah, di luar lingkup migrasi ini.
-- `npm test` hijau (303), `tsc` 0 error, `vite build` sukses. **Belum tervalidasi di device** (Gradle/CI
-  & HP fisik) sesuai "Definisi Selesai".
+### Added — "Pemutar sungguhan" Tahap 5: UI browser pustaka (menyatukan rantai)
+- `LibraryScreen.tsx` — overlay browser pustaka musik lokal: cari (judul/artis/album), tab
+  **Lagu/Album/Artis**, kontrol urut (judul/artis/album/terbaru/durasi), dan ketuk-untuk-putar
+  (lagu → antrean gapless mulai dari situ; album/artis → putar seluruh trek-nya). State: memindai,
+  butuh-izin, kosong. Menyambung `scanLibrary` (native) → `musicLibrary` (grup/sort/cari, teruji) →
+  `playQueueTracks` (native, gapless).
+- Titik masuk: tombol **"Telusuri pustaka"** di layar Sekarang (di samping "Pilih Lagu dari
+  Perangkat"). Overlay dirender di App (`libraryOpen`).
+- Verifikasi: tsc bersih, 197 tes (logika inti tak berubah), `vite build` sukses, balanced, mockup
+  PIL memvalidasi tata letak. **Render final + scan/putar hanya terbukti di perangkat.**
+- **Rantai kini utuh:** scanLibrary → musicLibrary → playbackQueue → playQueue/skip/setRepeatMode →
+  gapless. **Belum dikerjakan (Tahap 5b):** now-playing in-app mencerminkan antrean (indeks +
+  next/prev + repeat/shuffle UI) — kini pemutaran antrean jalan & notifikasi sistem benar, tapi
+  layar Sekarang belum menampilkan trek antrean yang sedang diputar.
 
-### Added — fondasi multibahasa (i18n) ringan: Bahasa Indonesia + English
-- Inti i18n TANPA library (bundle tetap kecil): `i18n.ts` (murni, TDD, **7 test baru**, total **275**)
-  dengan `translate(locale, key, params)` (interpolasi `{x}`, fallback locale→id→kunci) & `resolveLocale`
-  (mis. "en-US"→en). Kamus per-locale di `locales/id.ts` & `locales/en.ts` (id = basis).
-- React: `I18nProvider` + hook `useI18n()` (`t`, `locale`, `setLocale`); membungkus app di main.tsx.
-  Bahasa dideteksi dari perangkat saat pertama, bisa diganti manual, dan **disimpan** (`getSavedLocale`/
-  `setSavedLocale` di preferences, pola SecureStore + cache). Ganti bahasa langsung me-render ulang UI.
-- **Pemilih bahasa di Settings** (Bahasa Indonesia / English). Migrasi bukti-kerja: tab navigasi
-  (Sekarang/Riwayat/Atur), label jenis tiket (Jejak/Penemuan/Setia/Beruntun/Momen), teks "N tiket
-  terkumpul" & tombol Bagikan.
-- tsc 0 error, brace seimbang. **Belum tervalidasi device.** Catatan: ini FONDASI — mayoritas string
-  layar lain masih hardcode Indonesia; dimigrasikan bertahap ke sistem `t()` yang sama (tambah kunci di
-  id.ts lalu terjemahkan di en.ts). Teks gambar-bagikan Canvas & label native belum ikut.
 
-### Added — build terpasang sebagai UPDATE (tanpa uninstall) + log checklist validasi
-- **Terpasang sebagai update, data aman.** Akar masalah "harus uninstall tiap build": CI membuat
-  `android/` via `cap add android` lalu build debug APK yang ditandatangani `~/.android/debug.keystore`
-  yang di-generate ACAK tiap run → tanda tangan beda → Android menolak install di atas versi lama.
-  Kini keystore debug TETAP di-commit (`native-overlay/android/scrola-debug.keystore`, parameter debug
-  standar) dan CI (build.yml & release.yml) menyalinnya ke `~/.android/debug.keystore` sebelum build →
-  semua build ditandatangani sama → APK baru terpasang sebagai **update**, riwayat/tiket/koreksi tak
-  hilang. (Ini keystore DEV, bukan untuk rilis Play Store.)
-- **Log mencatat yang perlu divalidasi.** Saat app dibuka, `logValidationChecklist()` menulis stempel
-  build + daftar item yang belum tervalidasi device ke log peristiwa (`validationChecklist.ts`, murni,
-  **3 test baru**, total **268**). Screenshot log kini bisa ditelusuri ke build & langsung mengingatkan
-  apa yang perlu dicek.
-- tsc 0 error, brace seimbang. **Belum tervalidasi CI/device** (perlu 1x run CI + 1x install).
+### Added — "Pemutar sungguhan" Tahap 4: antrean native + gapless
+- `PlaybackService.playQueue(items, startIndex)` via `setMediaItems` → **gapless otomatis** (Media3
+  1.10) untuk format kompatibel. `items` = urutan main final dari JS (`playbackQueue.orderedUris`;
+  shuffle ditangani JS). Repeat ditangani ExoPlayer (`setRepeatMode` off/all/one) agar loop-nya juga
+  gapless. Volume di-reset per antrean; `onMetadata` menyesuaikan ReplayGain per track.
+- `skipNext`/`skipPrev`/`skipToIndex` (seekTo…MediaItem) + `onMediaItemTransition` yang memancarkan
+  event `queueIndexChanged {index}` supaya `QueueState.position` JS tetap sinkron saat auto-advance.
+- `PlayerPlugin` menambah `@PluginMethod` playQueue/skipNext/skipPrev/skipToIndex/setRepeatMode
+  (semua via `mainHandler.post`, karena ExoPlayer menolak akses lintas-thread). JS: method + event
+  `queueIndexChanged` di `PlayerPluginInterface` + helper `playQueueTracks(tracks, startIndex)`.
+- Verifikasi: brace/paren PlaybackService & PlayerPlugin OK, semua balanced, tsc bersih, 197 tes,
+  build sukses. **Native — wajib divalidasi CI + perangkat** (gapless, sinkronisasi indeks, repeat).
+- **Tahap berikutnya:** Tahap 5 UI React — browser pustaka (Lagu/Album/Artis + cari + sort) &
+  tampilan antrean, menyambung `musicLibrary` + `playbackQueue` (JS) ke `scanLibrary`/`playQueue` (native).
 
-### Changed — notifikasi Scrola hilang otomatis saat diam (tak lagi menggantung lagu terakhir)
-- Notifikasi foreground Scrola dulu terus menampilkan lagu TERAKHIR walau tak ada yang diputar (sifat
-  media Android: sesi tetap hidup dalam keadaan paused). Kini saat playback dijeda/diam,
-  `ScrobbleForegroundService` menjadwalkan penghapusan notifikasi otomatis setelah 2 menit
-  (`stopForeground(REMOVE)` + `stopSelf`); saat listener mendeteksi playback baru (`update(isPlaying=true)`),
-  jadwal dibatalkan & notifikasi muncul lagi. Aturan foreground tetap dipatuhi (startForeground
-  dipanggil segera; hanya penghentiannya yang ditunda). onDestroy & ACTION_STOP membatalkan jadwal.
-- Kosmetik & tak memengaruhi scrobble (digerbang status PLAYING + ambang + dedup). Notifikasi milik
-  app sumber (Spotify/YouTube Music) tetap di luar kendali Scrola. Perubahan native — **belum
-  tervalidasi device** (uji: putar → jeda → tunggu 2 mnt → notifikasi Scrola hilang → putar lagi →
-  muncul kembali).
 
-### Changed — kembalikan framing "Trofi" jadi tiket, jam dengar di tiap tiket, emblem mencolok
-- **Konsep disatukan kembali sebagai TIKET.** Label kategori "TROFI" diganti "MOMEN" (di aplikasi &
-  gambar bagikan) — pencapaian berpola (Burung Hantu, Ayam Jago, dst.) tetap ada, tapi dibingkai
-  sebagai tiket koleksi, bukan trofi game terpisah. Jenis internal & serial `SCR-T-…` dipertahankan
-  agar tiket yang sudah didapat tak bergeser.
-- **Jam dengar di tiap tiket.** `formatEarned` (kartu & gambar bagikan) kini menampilkan tanggal +
-  jam, mis. "11 Agu 2026 · 05.02" (format Indonesia, pemisah titik).
-- **Tiap tiket mencolok unik.** Emblem musik generatif (yang tadinya hanya di gambar bagikan) kini
-  tampil di SETIAP kartu di Koleksi Tiket — komponen `TicketEmblem` merender emblem per lagu+jenis di
-  kanvas mini (dpr-aware). Tiap tiket langsung terlihat berbeda sekilas.
-- tsc 0 error, 265 test, brace seimbang. **Belum tervalidasi device** (render emblem kanvas mini di
-  daftar + jam dengar).
+### Added — "Pemutar sungguhan" Tahap 3: pemindai pustaka native (MediaStore)
+- `PlayerPlugin.scanLibrary()` — query `MediaStore.Audio.Media` (pola Gramophone): `_ID/TITLE/ARTIST/
+  ALBUM/ALBUM_ID/DURATION/TRACK/YEAR/DATE_ADDED`, filter `IS_MUSIC != 0`, lewati klip <5s, normalisasi
+  `TRACK % 1000` (disc*1000+track), URI via `ContentUris`. Mengembalikan `{ granted, tracks[] }` dengan
+  field cocok `LibraryTrack` (langsung disusun logika Tahap 1). Query di thread latar plugin (bukan main).
+- Izin `READ_MEDIA_AUDIO` (API 33+) ditambah ke manifest + anotasi plugin (alias "audio") dengan
+  alur minta-izin (`requestPermissionForAlias` + `@PermissionCallback`). `READ_EXTERNAL_STORAGE`
+  (maxSdk 32) dideklarasi sebagai jalur lawas. Berbeda dari `pickAndPlay` (SAF, tanpa izin).
+- JS: `scanLibrary` di `PlayerPluginInterface` + helper `scanLocalLibrary()` (aman di web preview -> kosong).
+- Verifikasi: brace/paren PlayerPlugin OK, semua balanced, tsc bersih, 197 tes. **Native — wajib
+  divalidasi CI + perangkat.** Batas: alur izin <33 (READ_EXTERNAL_STORAGE) belum divalidasi;
+  ditargetkan untuk Android 33+ dulu.
 
-### Added — sistem TROFI (pencapaian ala game) + backup tiket & koreksi
-Menjawab: "pastikan tiap tiket unik seperti trophy game (bukan sekadar sering diputar / pertama
-didengar)" dan "pastikan data tiket & lainnya bisa di-backup".
 
-- **Jenis tiket baru `trofi`** — pencapaian BERPOLA/PERISTIWA, bukan hitungan putar. `trophies.ts`
-  (murni, TDD, **8 test**): Burung Hantu (dengar 00–04), Ayam Jago (subuh 04–06), Maraton (30
-  scrobble/hari), Jam Sibuk (15 scrobble/60 mnt), Kembali Pulang (jeda 30+ hari), Hari Beragam (20
-  artis berbeda/hari). Tiap trofi bernama, one-of-a-kind, dicetak SEKALI, deterministik dari riwayat.
-  Serial global `SCR-T-00000N`; ikon emblem khusus (medali berbintang).
-- **Backup tiket — sudah terjamin & kini terbukti.** Tiket = fungsi deterministik dari riwayat, dan
-  riwayat (artist/track/timestamp) ada di backup → restore meregenerasi tiket identik. Ditambah test
-  round-trip yang membuktikan `computeEarnedTickets` sama persis sebelum/sesudah serialize→parse.
-- **Backup koreksi (data user yang tadinya belum ter-backup).** Envelope backup kini menyertakan
-  `corrections`; `mergeCorrections` (murni, non-destruktif — aturan lokal tak ditimpa) + `mergeInCorrections`
-  di store; `buildBackupJson`/`restoreFromJson` membaca & memulihkannya; ringkasan restore menampilkan
-  "N koreksi dipulihkan". **4 test backup baru.**
-- Total **265 test**, tsc 0 error, brace seimbang. **Belum tervalidasi device.**
+### Added — "Pemutar sungguhan" Tahap 1–2: fondasi logika pustaka + antrean (murni, teruji)
+- Reorientasi Scrola jadi music player + arsip kenangan butuh pemutar lokal yang layak: telusuri
+  pustaka, antrean, gapless. Dua tahap fondasi (logika murni, bisa divalidasi penuh di sini)
+  dikerjakan, meniru pola Gramophone/Auxio (acuan riset):
+- **Tahap 1 — `musicLibrary.ts`** (+12 test): model `LibraryTrack/Album/Artist` (dipetakan dari kolom
+  MediaStore) + `groupIntoAlbums` (kunci albumId/artis::album, "Berbagai Artis" untuk kompilasi,
+  urut trackNo), `groupIntoArtists` (hitung album/track unik), `sortTracks`
+  (judul/artis/album/terbaru/durasi), `searchLibrary` (ternormalisasi).
+- **Tahap 2 — `playbackQueue.ts`** (+19 test): `QueueState` (items/playOrder/position/repeat/shuffle)
+  + `next`/`prev` (repeat off/all/one, repeat-one hanya pada auto-advance), `toggleShuffle` (track
+  saat ini tetap main, sisanya diacak; mati -> kembali urutan asli tanpa lompat), `cycleRepeat`,
+  `addToQueue`, `removeItem` (geser indeks + jaga current), `jumpToItem`, `orderedUris` (untuk
+  `setMediaItems` native). Shuffle menerima fungsi injeksi -> deterministik saat diuji.
+- Total **197 test lolos**, tsc benar-benar bersih, build sukses.
+- **Tahap berikutnya (native/UI, device-gated):** Tahap 3 `PlayerPlugin.scanLibrary()` via MediaStore;
+  Tahap 4 antrean native `setMediaItems` + gapless (otomatis Media3 1.10); Tahap 5 UI browser pustaka
+  + antrean (React). Logika di atas jadi sumber kebenaran yang tinggal disambung.
 
-### Added — aturan perolehan tiket SETIA & BERUNTUN
-- Jenis tiket `setia` & `beruntun` (yang ikonnya sudah dibuat) kini benar-benar BISA DIPEROLEH,
-  dihitung deterministik dari riwayat di `computeEarnedTickets` (TDD, **5 test baru**, total **253**):
-  - **SETIA** — satu artis mencapai N putar (default `[25, 50, 100, 250]`). Subject = artis; serial
-    ber-hash subjek (`SCR-S-000050-xxxx`) karena banyak artis bisa mencapai milestone sama; `earnedTrack`
-    = lagu pada putaran ke-N artis itu.
-  - **BERUNTUN** — streak hari beruntun (ada scrobble tiap hari, default `[3, 7, 14, 30, 100]`).
-    Serial global (`SCR-B-000007`); dicetak SEKALI saat streak pertama kali mencapai milestone;
-    `earnedTrack` = scrobble hari penutup streak. Beberapa scrobble di hari sama tak menambah streak.
-- Otomatis muncul di Koleksi Tiket (getTicketCollection pakai config default) lengkap dengan ikon
-  per-jenis (SETIA=riak, BERUNTUN=gelombang) dan tombol bagikan. Serial semua jenis tetap deterministik
-  & stabil. tsc 0 error, brace seimbang. **Belum tervalidasi device.**
 
-### Added — ikon musik generatif per-JENIS tiket (album-art khas Scrola)
-- Tiket tak menyimpan cover album & menarik cover Last.fm ke Canvas bermasalah (CORS -> taint ->
-  gagal export). Solusinya: **ikon musik generatif**, unik per lagu, on-brand, deterministik, tanpa
-  jaringan — dan kini **tiap JENIS tiket punya bentuk berkarakter sendiri**:
-  - **JEJAK** -> spektrum equalizer radial ("audio bloom") — perjalanan scrobble menumpuk.
-  - **PENEMUAN** -> konstelasi (bintang berjarak + garis) — menemukan bintang baru (vibe malam).
-  - **SETIA** -> riak/mandala (busur konsentris berjeda) — kembali berputar.
-  - **BERUNTUN** -> gelombang mendatar — momentum tak putus.
-- `emblemSeed(ticket)` (murni, TDD, total **248** test): seed dari LAGU (artist|track), fallback serial.
-  Renderer `drawTicketEmblem(...kind)` memakai PRNG mulberry32 → bentuk tetap UNIK per lagu di dalam
-  tiap jenis, tetap keluarga Scrola (bingkai stempel + palet Hutan Malam + aksen amber/coral by seed).
-- Layout: judul -> IKON (pusat) -> artis/lagu/tanggal -> cap serial -> atribusi. Mockup PIL memperlihatkan
-  4 jenis. tsc 0 error, brace seimbang, tanpa kode mati. **Belum tervalidasi device.**
+### Fixed — utang tipe: 2 error tsc `Intl.Segmenter` yang selama ini di-masking kini beres
+- `noteLogic.ts` memakai `Intl.Segmenter` (dengan feature-detection + fallback, jadi aman runtime),
+  tapi `tsconfig` `lib` = `ES2020` tak punya tipenya → 2 error TS2339 yang selama ini disaring manual
+  di tiap verifikasi ("tsc bersih" yang sebenarnya menyembunyikan 2 error). Diperbaiki dengan menambah
+  `ES2022.Intl` ke `lib` (lib file `lib.es2022.intl.d.ts` yang mendeklarasikan `Segmenter`). **Kini
+  `tsc --noEmit` benar-benar 0 error tanpa masking.** 166 tes tetap lolos, build sukses.
 
-### Added — bagikan tiket sebagai gambar (stub 9:16) — unit iklan organik
-- Tiap tiket koleksi kini bisa dibagikan sebagai **gambar stub vertikal 1080×1920** (format WhatsApp
-  Status / Instagram Story — kanal berbagi dominan di Indonesia). Tombol "↗ Bagikan" di tiap tiket →
-  render Canvas → `SharePlugin.shareImage` (pola & plumbing sama dengan zine Sisi B, tanpa dependensi
-  baru).
-- **Keunikan & fungsi-iklan by design:** (1) **cap № serial** jadi hero (bukti "diperoleh", serial
-  rendah = early-adopter); (2) **lagu pemicu** + milestone bercerita; (3) **pola guilloche
-  unik-per-serial** (deterministik dari `ticketPatternSeed`, seperti uang kertas — sulit ditiru); (4)
-  **atribusi menyatu** di gambar (wordmark "Scrola" + "Every song leaves a story." + "scrola.app")
-  supaya tiap tiket yang dibagikan menarik install.
-- Pure-logic + TDD: `ticketShareLayout.ts` (`ticketPatternSeed` deterministik, `ticketEarnedLine`)
-  **6 test baru**, total **245**. Renderer `ticketShareImage.ts` (Canvas). Mockup PIL
-  `scripts/mockup_ticket_share.py` untuk persetujuan layout.
-- tsc 0 error, brace seimbang. **Belum tervalidasi device** — perlu cek render Canvas + share sheet di
-  SM-X706B (font Fraunces/IBM Plex Mono, `№`, guilloche). Serverless → rarity bersifat pribadi
-  ("1 dari 1 milikmu"), tak menjanjikan kelangkaan global.
-- Dari pertanyaan device: tiket JEJAK ("Scrobble pertamamu", "Scrobble ke-100") tak menampilkan lagu
-  karena merayakan JUMLAH, bukan satu lagu. Kini **setiap tiket** (semua jenis, termasuk yang akan
-  ditambahkan nanti) menyimpan **lagu pemicunya** lewat field baru `CollectibleTicket.earnedTrack`:
-  jejak ke-N = scrobble ke-N; penemuan = lagu yang mengenalkan artis itu.
-- **Serial tetap** — `earnedTrack` hanya untuk TAMPILAN; `ticketSerial` tak berubah (jejak dari
-  ordinal, penemuan dari artis), jadi tiket yang sudah terkumpul tak bergeser. Diuji eksplisit
-  (**3 test baru**, total **239**): earnedTrack benar + serial tak berubah.
-- UI `TiketKoleksiScreen`: jejak menampilkan "Artis — Judul"; penemuan (artis sudah tampil) menampilkan
-  "lewat 'Judul'". Data sudah tersedia dari query tiket (`SELECT artist, track, timestamp`) — tanpa
-  perubahan skema/query. tsc 0 error, brace seimbang. **Belum tervalidasi device.**
-- Dari feedback device: mode Per hari/minggu/bulan menampilkan daftar penuh menjulur ke bawah. Kini
-  dipaginasi **10 lagu per halaman** dengan bar navigasi (‹ Sebelumnya / Berikutnya ›, "1–10 dari 26 ·
-  Hal 1/3") di atas & bawah daftar. Mode **Terbaru** tetap 10 tanpa paging (1 halaman).
-- Pure-logic + TDD: `paginateHistory(items, page, pageSize=10)` (**5 test baru**, total **236**) —
-  memotong per halaman & meng-clamp halaman di luar rentang (aman saat ganti mode/item berubah).
-  Alur baru: item mode → **paginate** → group **halaman ini** (bentuk grup identik → rendering tak
-  berubah). Halaman reset ke 0 saat mode berganti.
-- Murni logika + React (tanpa native). tsc 0 error, brace seimbang. **Belum tervalidasi device** —
-  cek: mode Per hari dgn >10 lagu menampilkan bar, Berikutnya/Sebelumnya berpindah halaman, tombol
-  nonaktif di ujung.
-- Logika filter per-sumber (`shouldScrobbleSource` + `getIgnoredSources`/`toggleIgnoredSource`,
-  diterapkan di drain & real-time) sudah ada dari sesi sebelumnya; sesi ini **melengkapi UI-nya** di
-  Settings. Chip "Sumber terdeteksi" kini **bisa diketuk** untuk membisukan/mengaktifkan scrobble dari
-  app itu (dibisukan = dicoret + 🔇), dengan hint bahwa ini berguna untuk app menonton video (mis.
-  YouTube utama) tanpa mematikan sumber musik lain.
-- Menjawab kebutuhan pengguna dari log device: "Key & Peele" ter-scrobble dari
-  `com.google.android.youtube` (app YouTube utama, mayoritas video). Membisukan sumber itu menghentikan
-  tontonan ter-scrobble secara deterministik, sementara Spotify & YouTube Music tetap jalan. (Catatan:
-  ini per-APP; tak bisa memisah musik vs video DI DALAM app yang sama — batasan semua scrobbler notif.)
-- Optimistic + rollback bila persist gagal. tsc 0 error, 231 test lolos, brace seimbang. **Belum
-  tervalidasi device** — perlu cek: ketuk sumber → jadi dibisukan → scrobble berikutnya dari sumber itu
-  tak muncul.
-- Riwayat kini punya pemilih mode: **Terbaru** (default, hanya **10 lagu terakhir**), **Per hari**,
-  **Per minggu**, **Per bulan** (ketiganya menampilkan riwayat **UTUH** dikelompokkan per periode), dan
-  **Bercatatan** (hanya lagu yang punya catatan). Sesuai permintaan: default ringkas, periode = lengkap.
-- Pure-logic + TDD (**6 test baru**, total **226**): `groupHistoryByPeriod` (day/week/month — label
-  "Minggu ini"/"Minggu lalu"/rentang & "Bulan ini"/"Bulan lalu"/"Nama Tahun", memakai ulang
-  `startOfIsoWeek` & `weekRangeLabel` yang sudah ada), `filterHistoryWithNotes`, `recentHistory`. Semua
-  menghasilkan bentuk grup identik dengan `groupHistoryByDay` → rendering Riwayat tak berubah.
-- Data: `getAllHistory()` (query utuh) dimuat **lazy** hanya saat mode non-Terbaru dipilih; mode
-  Terbaru tetap ringan (10 dari prop yang sudah dimuat). Ada state loading & empty-state khusus
-  ("Belum ada catatan" untuk mode Bercatatan).
-- Murni logika + React (tanpa native baru). `tsc` 0 error, brace seimbang. **Belum tervalidasi
-  device** — perlu cek tampilan pemilih & pengelompokan periode di SM-X706B.
-Dari feedback device (file lokal tanpa tag ID3 tampil sebagai `audio%3A...` / "Tidak dikenal" tapi
-tetap menghitung mundur untuk scrobble):
+### Audit — aksesibilitas kontras (WCAG): palet Hutan Malam LOLOS
+- Dihitung rasio kontras semua pasangan teks/latar utama: paper/ink 15.1, muted/surface 5.9,
+  amber/ink 8.0, coral/surface 6.2, paper/raised 11.8 — **semua ≥ 4.5:1 (lulus AA teks normal).**
+  Jadi keterbacaan bukan celah kualitas; desain warna sudah kuat.
 
-- **A. Metadata sampah tak di-scrobble.** `isScrobbableMetadata(artist, track)` (murni, TDD, **6 test
-  baru**, total **220**) menolak artist kosong/placeholder ("Tidak dikenal"/"Unknown") dan judul yang
-  sebenarnya content-URI/document-id (`audio%3A…`, `content://…`). Di-guard di `enqueueScrobbleNoFlush`
-  (chokepoint SEMUA jalur scrobble) — file tanpa metadata jelas TIDAK mengotori profil Last.fm sampai
-  jelas (mis. setelah tag diedit). `NowPlayingScreen` kini menampilkan "metadata belum jelas — edit tag
-  dulu" alih-alih hitung mundur menyesatkan, dan tak memunculkan toast "tercatat".
-- **B. Edit tag lagu yang sedang diputar → langsung ke editornya.** Dulu tombol edit membuka picker
-  kosong (user harus cari ulang MP3). Sekarang: metode native baru `Mp3Metadata.readMetadata(uri)`
-  (baca tag dari URI tanpa picker) + `useMp3Editor.loadUri` + `EditMetadataScreen initialUri` +
-  `NowPlayingScreen` meneruskan URI file yang diputar (hanya `content://` lokal). Agar bisa **disimpan**,
-  file-pick `PlayerPlugin` kini mengambil izin **READ|WRITE** persisten (fallback READ bila provider tak
-  memberi write) — selaras dengan editor yang memang menulis ulang file.
-- Validasi di sini: tsc 0 error, 220 test, brace `.ts/.tsx/.kt` seimbang. **Task B belum tervalidasi
-  device** & bergantung perilaku SAF: (1) URI pemutar dapat dibaca editor, (2) izin WRITE benar-benar
-  diberikan provider sehingga SIMPAN berhasil. Wajib diuji: putar file lokal → tap edit (✎) → editor
-  terbuka dengan file itu → ubah → simpan → berhasil.
-- Dari screenshot device: `com.samsung.android.honeyboard` (keyboard Samsung) muncul sebagai "sumber"
-  karena punya MediaSession, padahal tak pernah melaporkan judul/artis (tak mungkin ter-scrobble) —
-  cosmetic/berpotensi membingungkan. `isLikelyMusicSource` (murni, TDD, **5 test baru**, total **214**)
-  menyaring keyboard/IME/launcher/systemui dari daftar tampil, mempertahankan app musik dikenal DAN
-  paket tak dikenal lain (sesuai filosofi sourceLabels: perlihatkan yang tak dikenal untuk identifikasi).
-- **Validasi device (screenshot 02.46):** UI ketiga tab render mulus; H4/H5/H6 lolos (deteksi, log,
-  antrean jujur "kosong"); A3 sebagian (jam Riwayat berurutan & wajar, tak menumpuk); UI Cadangan Data
-  & Backstage Pass tampil benar; teks CJK render benar di Riwayat. Ditandai di `docs/VALIDASI_DEVICE.md`.
-  Dikonfirmasi bukan-bug: "Sh**ting Stars" = metadata sumber (Scrola tak menyensor teks).
 
-### Fixed / Security — audit menyeluruh 5 putaran
-- **Putaran 1 (build/tipe):** memperbaiki **2 error `tsc` pra-ada** (`Intl.Segmenter` tak dikenal
-  di `lib` tsconfig) dengan menambah `ES2022.Intl` — kode-nya sendiri sudah dijaga runtime + fallback.
-  **`tsc` kini 0 error** (dulu 2). Brace `.ts/.tsx/.kt` semua seimbang; tak ada TODO/FIXME tertinggal.
-- **Putaran 2 (logika/async):** tak ada `==` longgar (hanya idiom `== null` & komentar), tak ada
-  floating promise, tak ada `console.log` sisa. Integrasi backoff (outcome terminal, state ditulis
-  hanya dalam guard `isFlushing`) & urutan restore (id lokal tak ter-invalidasi insert) ditelaah — bersih.
-- **Putaran 3 (keamanan):** semua query DB **parameterized** (tak ada interpolasi SQL); secret Last.fm
-  dari `import.meta.env` (`.env*` di-gitignore, ada placeholder-guard); izin manifest minimal (editor
-  MP3 via SAF, tanpa izin storage); tak ada `dangerouslySetInnerHTML`/`eval`. **Fixed (hardening):**
-  `SharePlugin.shareFile/shareImage` kini menyanitasi `filename` ke basename aman (defense-in-depth
-  anti path-traversal; sebelumnya tak tereksploitasi karena filename selalu dari kode kita).
-- **Putaran 4 (konkurensi/lifecycle):** semua guard (`isFlushing`/`syncingRef`/`sharingRef`) reset di
-  `finally`; `setInterval` di-clear; listener React & native dilepas di cleanup. Tak ada leak baru.
-- **Putaran 5 (integritas data):** restore backup **terbukti non-destruktif** (nol delete/clear/
-  overwrite di jalurnya); tak ada `catch` kosong penelan-error atau `as any` di modul baru.
-- **Batas jujur:** ini audit **statis** (tipe, pola, telaah logika, grep keamanan) — mempersempit
-  ruang bug, TAPI tidak menggantikan validasi device. "Bebas bug" penuh tetap butuh uji di SM-X706B
-  (lihat `docs/VALIDASI_DEVICE.md`). Verifikasi akhir: **tsc 0 error, 209 test lolos.**
-- Menutup item roadmap v0.3.0 yang tersisa: kurasi "Penemuan" sebagai layar tersendiri, bukan
-  sekadar angka. Mengubah stat "penemuan baru" di Sisi B jadi cerita yang bisa ditelusuri — tiap
-  artis yang pernah ditemukan, lagu yang mengenalkannya, kapan, dan berapa kali diputar.
-- `discoveryLogic.ts` (MURNI, TDD, **7 test baru**): `computeDiscoveries` — satu entri per artis
-  (dinormalkan case/spasi), memakai kemunculan PALING AWAL sebagai penemuan, diurut terbaru dulu,
-  mengabaikan artist kosong. Total **209 test lolos**.
-- `PenemuanScreen.tsx` — overlay (pola sama Bab/Album) yang mengomposisi `getAllHistoryForBackup`
-  (query yang sudah ada) dengan `computeDiscoveries`. Kartu stat "Penemuan" di Sisi B kini bisa
-  di-tap untuk membuka linimasa lengkap.
-- Murni logika + React (tanpa native baru). `tsc` bersih (rantai App→SisiB→Penemuan→query typecheck),
-  brace seimbang. **Belum tervalidasi device** — tampilan & navigasi perlu dicek di SM-X706B.
-- `docs/REFERENSI_TAG_EDITOR.md`: studi app editor tag ID3 open-source (spkdroid/Mp3-Tag-Editor yang
-  juga pakai **mp3agic** → memvalidasi pendekatan Scrola; Metadator yang pakai **TagLib** multi-format;
-  serta jaudiotagger). Memetakan baseline Scrola (mp3agic, SAF temp-file, pertahankan tag, downscale
-  art) vs yang layak diadopsi. **Prioritas #1: encoding Unicode** — plugin belum set encoding, ikut
-  default mp3agic; untuk app berbahasa Indonesia, teks non-Latin/CJK berisiko mojibake bila ditulis
-  ISO-8859-1 (wajib uji device + paksa UTF-16/UTF-8). Juga: picture-type album art, salin-balik lebih
-  aman. Sikap dijaga: TIDAK meniru kelengkapan Metadator (batch/lirik/multi-format) — editor Scrola
-  sengaja ramping sebagai pelengkap scrobbler. Catatan lisensi: Metadator AGPL-3.0 → pelajari pola,
-  jangan salin kode ke Scrola (GPL-3.0). Ditautkan dari README. Dokumen saja — 202 test tetap.
-- Implementasi rekomendasi #1 dari `docs/REFERENSI_SCROBBLE_PANO.md`. Sebelumnya flush di-retry pada
-  interval TETAP 20 dtk; saat Last.fm rate-limit (kode 5/29) atau jaringan down, Scrola menghantam
-  tiap 20 dtk dan — dikombinasi `MAX_ATTEMPTS=8` — bisa **membuang scrobble sah** dalam hitungan menit.
-- `backoffPolicy.ts` (MURNI, TDD, **8 test baru**): `backoffDelayMs` (eksponensial base 20s ×2^n,
-  batas 30 mnt), `canAttempt`, `nextBackoffState`. `flushQueue` kini: cek `canAttempt` sebelum flush
-  (lewati bila dalam jendela backoff); `flushQueueOnce` mengembalikan `FlushOutcome`
-  (`ok`/`noop`/`rate_limited`/`error`) → sukses reset backoff, gagal/rate-limit menaikkan jeda.
-- Drain native TIDAK terpengaruh (tetap memindah pending → antrean JS); hanya flush jaringan yang
-  di-gate. State backoff in-memory (reset saat app restart = percobaan segar). Timer 20 dtk tetap;
-  tick yang jatuh dalam jendela backoff dilewati.
-- Validasi: **202 test lolos**, `tsc` bersih, brace seimbang. Belum tervalidasi device — harap log
-  saat jaringan diputus menunjukkan jeda retry yang MEMBESAR (mis. `flush error → backoff ~40s`),
-  bukan spam tiap 20 dtk; dan setelah jaringan pulih, satu flush sukses lalu cadence normal kembali.
-- `docs/REFERENSI_SCROBBLE_PANO.md`: studi pola submit pending-scrobble Pano Scrobbler (GPL-3.0, dari
-  sumbernya — `PendingScrobblesWorker`, DAO, penjadwalan WorkManager) sebagai pembelajaran, bukan
-  salinan kode. Memvalidasi keputusan Scrola yang sudah ada (batch 50, serialisasi submit via
-  `syncingRef`/`isFlushing`, timeout jaringan, permanen-vs-transien kode 5, urutan terlama-dulu) dan
-  mengidentifikasi penghalusan berprioritas: **backoff + retry-after saat gagal** (mencegah scrobble
-  sah terbuang oleh MAX_ATTEMPTS saat rate-limit sementara), **cabang error top-level** (9 sesi vs 29
-  rate-limit), dan **jeda antar batch + HARD_LIMIT per flush**. Termasuk pelajaran dari bug-report Pano
-  (pending stuck #8/#562 → jaga guard/timeout; repeat pause-resume #570). Ditautkan dari README.
-  Dokumen saja — tak menyentuh kode; 194 test tetap.
-- Terdiagnosis dari log device 16:04: batch-drain 3 track latar terpecah jadi `KIRIM 2` lalu
-  `KIRIM 3` (2 track terkirim ulang) karena `syncScrobbles` (dipicu dari buka-app / kembali-foreground
-  / timer 20 dtk) bisa **tumpang-tindih dengan dirinya sendiri**: sync #2 memanggil `flushQueue`
-  selagi drain #1 masih meng-enqueue → flush menyela di tengah drain.
-- **Tidak ada kerusakan data** (dikonfirmasi dari kode): `drainAll` native atomik (`synchronized`,
-  baca+hapus) → tak ada double-drain; riwayat lokal benar; timestamp asli terjaga; Last.fm dedup
-  mencegah duplikat terlihat. Isunya efisiensi/keutuhan batch, bukan korupsi.
-- Fix: guard `syncingRef` di `App.tsx` menjadikan drain→flush→reload **satu unit atomik**; pemicu yang
-  datang saat sync berjalan dilewati (timer 20 dtk berikutnya menyusul). Batch-drain kembali utuh
-  (`KIRIM N` sekali). Guard React murni (pola sama dgn `sharingRef`) — divalidasi kode + tsc; 194 test
-  tetap lolos. Belum tervalidasi device: harap log berikutnya menunjukkan satu `KIRIM N` tanpa
-  `KIRIM` pecah saat drain backlog.
-- **Hasil uji device (08:12, log A2):** 56 track backlog lintas-pemutar (YouTube Music + Spotify)
-  ter-drain jadi **2 batch (15 + 41), 56/56 diterima, 56 baris ditulis** — batch-drain & tangkap
-  latar lintas-pemutar TERVALIDASI. TAPI target "satu KIRIM N bersih" BELUM tercapai: masih ada flush
-  menyela di tengah drain. Sumbernya (dari kode) BUKAN tumpang-tindih `syncScrobbles` (itu sudah
-  ter-guard) melainkan jalur **real-time** `enqueueScrobble`→`flushQueue`: lagu yang sedang diputar
-  jadi layak scrobble di tengah drain. Dampaknya **kosmetik** di kasus ini (15+41 = 2 panggilan API,
-  sama dengan 50+6), walau untuk backlog lebih besar bisa menambah 1 panggilan. Sengaja **tidak
-  diperbaiki** dulu: menambah guard lagi ke jalur submit yang baru tervalidasi berisiko > manfaat.
+### Changed — audit dep native selain media3: core-ktx dinaikkan agar konsisten dengan Cap 8
+- Selain media3, `apply-native-overlay.cjs` menyuntik tiga dep native lain. Hasil audit:
+  - **`androidx.core:core-ktx` 1.13.1 → 1.17.0** — Cap 8 menyetel `androidx.core:core` ke 1.17.0
+    (template), jadi core-ktx dipaku 1.13.1 menimbulkan skew versi. Diselaraskan (rendah risiko).
+  - **Kotlin 1.9.25** — bisa ke 2.x (stabil 2.3.0) tapi memaksa `kotlinOptions`→`compilerOptions` +
+    Java 21; DITAHAN (sudah didokumentasikan sebagai fallback bila AGP 8.13 menolak 1.9.25).
+  - **mp3agic 0.9.1** — sudah versi terakhir/stabil (library matang), tak ada upgrade.
+- Sisanya (androidx activity/appcompat/fragment/webkit/splashscreen, AGP, Gradle wrapper) datang
+  otomatis dari template Capacitor 8 saat `cap add android` di CI.
+- Verifikasi: skrip lolos `node -c`, tsc bersih, 166 tes. Build APK divalidasi CI + perangkat.
 
-### Added — backup/restore data (catatan & favorit) via file JSON
-- Catatan per-lagu adalah data buatan-pengguna yang tak tergantikan. Upgrade di tempat tidak
-  menghapusnya, TAPI reinstall / ganti HP / "Clear data" / APK berkunci-beda menghapusnya — dan
-  `allowBackup="false"` (sengaja, demi privasi) berarti tak ada jaring cloud. Kini ada backup manual
-  JSON: file dipegang pengguna, tanpa cloud, selaras positioning privasi.
-- **Core murni** `backupData.ts`: `serializeBackup` (envelope berversi), `parseBackup` (validasi ketat
-  → menolak file rusak/bukan-backup dgn pesan jelas), `mergeBackup` (**NON-DESTRUKTIF**: pulihkan
-  catatan hanya ke baris yang belum bercatatan, sisipkan baris hilang, favorit aditif — tak pernah
-  menimpa/mengosongkan catatan lokal atau meng-unfavorite; konflik dicatat, lokal menang). TDD, 11 test.
-- **Wiring:** `backupService.ts` (orkestrasi DB+merge); query `getAllHistoryForBackup` +
-  `insertBackupRows` (insert restore lengkap dgn note & loved, atomik via executeSet); method native
-  `shareFile` di plugin Share Kotlin (menulis JSON ke cacheDir → FileProvider → share sheet — **tanpa
-  dependensi npm/SDK baru**); tombol **Buat cadangan** (export) & **Pulihkan dari file** (import via
-  `<input type=file>` WebView → FileReader → parse → merge → terapkan) di `SettingsScreen`, dengan
-  ringkasan hasil ("X catatan dipulihkan · Y favorit · Z konflik dipertahankan").
-- Validasi: **194 test lolos**, `tsc` bersih (rantai backupService→queries→share→SettingsScreen
-  typecheck), brace `.ts/.tsx/.kt` seimbang. Bagian native (`shareFile`) + import file **belum
-  tervalidasi device** — bukti akhir: CI + uji export→simpan→install ulang→pulihkan di SM-X706B.
 
-### Docs — positioning pasar Indonesia diformalkan
-- `docs/POSITIONING.md` baru: mengonsolidasikan positioning yang selama ini tersebar (README,
-  `DESIGN.md` §kompetitif, `RELEASES.md` §"Kenapa Scrola?") jadi satu pernyataan posisi pasar
-  Indonesia yang eksplisit — untuk siapa, wedge lokal (Bahasa Indonesia lebih dulu, identitas
-  naratif/cetak yang mudah dibagikan, ringan/tanpa telemetri), perbandingan jujur vs Pano Scrobbler
-  (termasuk overlap listener yang harus diakui), dan pemetaan ke materi publik.
-- **Sengaja tanpa angka pasar karangan** (etos kejujuran): ada bagian "Data yang perlu divalidasi"
-  yang mencatat data empiris apa yang harus dikumpulkan maintainer sebelum klaim dipertajam.
-- Ditautkan dari daftar dokumen README. Menutup item roadmap "positioning pasar Indonesia (belum
-  diformalkan)". Perubahan dokumen saja — tak menyentuh kode; suite tetap 183 test.
+### Changed — persiapan upgrade Capacitor 8 diselesaikan LEWAT REPO (alur CI, bukan Android Studio)
+- **Temuan alur:** Scrola di-build sepenuhnya di GitHub CI (`build.yml`) yang meng-generate `android/`
+  via `npx cap add android` tiap build lalu menerapkan `scripts/apply-native-overlay.cjs`. Karena
+  `android/` tak di-commit, menaikkan npm `@capacitor/*` ke ^8 membuat CI otomatis memakai template
+  **Capacitor 8** (variables.gradle minSdk 24/compileSdk 36, AGP 8.13, wrapper) — **tanpa mengedit
+  file gradle manual.** Jawaban atas "bisa lewat repo GitHub?": **ya, sepenuhnya.**
+- **Disiapkan:**
+  - `apply-native-overlay.cjs`: media3 **1.4.1 → 1.10.0** (di sinilah versi media3 sebenarnya
+    disuntik ke `android/app/build.gradle` — bukan di README). Kotlin 1.9.25 + jvmTarget 17 + Java 17
+    tetap (konsisten, kompatibel dengan AGP 8.13).
+  - CI `build.yml` & `release.yml`: Node **20 → 22** (Cap 8 butuh Node 20+; JDK sudah 21).
+  - `package.json` @ Cap 8 + `package-lock.json` diregenerasi (agar `npm ci` reproducible).
+- `MIGRASI-CAPACITOR-8.md` ditulis ulang ke alur CI nyata: yang perlu dilakukan hanya commit + push;
+  CI membangun APK. Termasuk verifikasi device + perbaikan siap-pakai bila CI gagal (fallback Kotlin
+  2.0.21 + `compilerOptions`/Java 21; langkah setup SDK API 36; catatan native SQLite).
+- Verifikasi container: skrip overlay lolos `node -c`, `tsc` bersih, 166 tes lolos. **Build APK
+  sebenarnya divalidasi CI + perangkat** (di luar sesi ini).
 
-### Fixed — serial zine kini stabil per minggu & selaras dgn sistem serial tiket
-- Serial zine sebelumnya (dibuat di giliran yang sama) memakai suffix `totalTracks % 10000`: (a)
-  BERUBAH kalau zine minggu yang sama dibagikan ulang setelah scrobble bertambah — padahal serial
-  "koleksi" harus tetap; (b) rawan tabrakan; (c) tidak memakai konvensi hash serial yang sudah ada.
-- `zineSerial(weekStartUnixSec)` dipindah dari inline (tak teruji) ke `sisiBZineLayout.ts` (murni,
-  teruji), kini HANYA bergantung minggu, dan suffix-nya memakai `subjectHash` (djb2) yang sama dengan
-  `ticketSerialLogic.ts` → bahasa serial konsisten di seluruh app. Format tetap `SB-YYYY-Wnn-XXXX`
-  (tampilan yang sudah disetujui), tapi XXXX kini hash stabil, bukan angka yang bisa berubah.
-- TDD RED→GREEN, **3 test baru** (format, determinisme/stabilitas, minggu berbeda→serial berbeda).
-  Total **183 test lolos**. Catatan: sebelum ekspor zine pernah dipakai luas, tak ada serial lama
-  yang perlu dimigrasikan — aman.
 
-### Added (v0.3.0) — ekspor zine Sisi B
-- Item roadmap "Sisi B sebagai zine/share yang bisa diekspor" — SELESAI (di balik proof device).
-  Cek existing dulu: `SisiBScreen`/`BabAlbumScreen`/`TiketKoleksiScreen` + logikanya sudah ada; yang
-  kurang HANYA ekspor gambar (baris ~248 `SisiBScreen` sebelumnya placeholder jujur "belum tersedia").
-- `sisiBZineLayout.ts` — modul MURNI: `weekRangeLabel` (rentang minggu Indonesia, ringkas lintas
-  bulan/tahun), `dayBarHeights` (normalisasi 7 hari, aman nol), `peakHourLabel`, `DAY_LABELS_ID`.
-  TDD RED→GREEN, **11 test baru** (total **180 lolos**).
-- `sisiBZineImage.ts` — `renderSisiBZine(stats, weekStartUnixSec)` menggambar zine 1080×1920 via
-  Canvas (mengikuti pola `shareImage.ts`: nol dependensi, tunggu `document.fonts.ready`, base64 PNG),
-  tema Hutan Malam: perforasi, masthead rentang minggu, lagu teratas, bar chart mingguan (hari puncak
-  disorot), grid statistik, strip jam puncak, serial koleksi dekoratif, tagline.
-- `SisiBScreen` — placeholder diganti tombol "Bagikan sebagai zine" sungguhan → `renderSisiBZine`
-  → `SharePlugin.shareImage` (pipeline sama dengan share tiket Now Playing), lengkap dgn state
-  loading & pesan error.
-- `scripts/mockup_sisib_zine.py` — mockup PIL sebagai proxy visual (disetujui) sebelum Canvas dibangun.
-- Validasi: `tsc` bersih (2 error `Intl.Segmenter` pra-ada), 180 test lolos, brace `.ts/.tsx` seimbang.
-  Renderer Canvas tak bisa dijalankan di lingkungan ini → **belum tervalidasi device**; bukti akhir
-  tetap CI + tampilan share di SM-X706B.
+### Notes — keputusan upgrade JS lain: DITAHAN (dievaluasi, sengaja tidak dilakukan)
+- **Vite 5→8 / Vitest 2→4 / plugin-react 4→6: dibatalkan.** Vite 8 adalah penulisan ulang berbasis
+  **Rolldown** (perubahan arsitektur bundler, bukan sekadar naik versi) dan `plugin-react@6` menyeret
+  ekosistem peer baru (rolldown/oxc/react-compiler) yang bentrok resolusi. Ini alat **build/test yang
+  tidak dikirim ke pengguna** dan sudah berfungsi — memaksa lompatan arsitektur berisiko tanpa
+  manfaat user-facing bertentangan dengan prinsip "jangan upgrade tanpa alasan". Tetap di Vite 5 /
+  Vitest 2.
+- **TypeScript 5→7: ditahan.** TS 7 = port compiler native (Go); dev-only, manfaat marginal, risiko
+  perubahan perilaku type-check. Tidak mendesak.
+- **React 18→19: ditahan.** Tes Scrola murni-logika (bukan render komponen), jadi `tsc`/`build` lolos
+  TIDAK memvalidasi perilaku runtime React 19 di WebView — tak bisa dibuktikan di sini. Tanpa manfaat
+  mendesak, risiko tak sepadan.
+- **Tailwind 3→4: ditahan.** Rewrite besar (config berbasis-CSS `@theme`); memindahkan seluruh token
+  "Hutan Malam" berisiko ke identitas visual dan tak bisa divalidasi visual di sini.
+- **Kesimpulan:** satu-satunya upgrade JS yang bernilai + bisa divalidasi + bersih adalah **Capacitor
+  8** (sudah diterapkan). Sisanya ditahan sampai ada alasan konkret + lingkungan validasi yang tepat.
 
-### Fixed — scrobble yang ditolak karena batas harian tak lagi dibuang (kode 5)
-- `parseScrobbleResponse` dulu memperlakukan **semua** `ignoredMessage.code` non-nol sebagai
-  "ditolak permanen → buang". Padahal per dok resmi Last.fm hanya kode 1-4 (artist/track diabaikan,
-  timestamp terlalu tua/baru) yang permanen; **kode 5 = batas scrobble harian** bersifat sementara.
-  Membuangnya = kehilangan scrobble sah, bertentangan dengan etos app.
-- Kini parse mengembalikan `retryableIndexes` (subset ignored berkode 5). Di `flushQueueOnce`:
-  diterima + ditolak-permanen dihapus dari antrean seperti biasa; yang **transien ditahan di
-  antrean** (`markQueueAttemptFailed`, jadi tetap terbatas `MAX_ATTEMPTS` bila limit bertahan lama),
-  lalu flush **dihentikan** siklus itu (batch berikutnya pasti kena limit sama — hindari menghantam
-  Last.fm dalam loop). Sisa antrean dicoba lagi pada flush berikutnya.
-- Kode `ignoredMessage` diverifikasi langsung dari dok resmi Last.fm (track.scrobble), bukan ingatan.
-- **Pure-logic + TDD:** RED→GREEN, **5 test baru** untuk klasifikasi transien/permanen (kode string
-  & number, campuran, semua-5, semua-sukses). Total **169 test lolos**. `tsc` bersih (2 error
-  `Intl.Segmenter` pra-ada). Belum tervalidasi device (kasus ini langka — perlu backlog masif
-  menembus batas harian); bukti akhir tetap CI + device.
 
-### Changed — position-poll adaptif (tindak lanjut Temuan 2 audit RAM)
-- `PlayerPlugin` dulu repost poll posisi **tiap 1 dtk tanpa syarat** sepanjang WebView hidup —
-  termasuk saat `PlaybackService.instance == null` (internal player tak pernah dipakai, kasus umum
-  karena mayoritas sesi hanya scrobble Spotify eksternal). Bangun CPU tiap detik tanpa emit apa pun.
-- Kini interval adaptif: **1 dtk saat playing** (perilaku lama persis — progress bar & eligibility
-  tak berubah), 2 dtk saat pause, 3 dtk saat tak ada internal player (+lewati emit). Keputusan
-  interval dipisah ke `nextPollDelayMs(playing, hasService)` agar niatnya eksplisit.
-- Loop **tidak** pernah berhenti total selama plugin hidup (hanya melambat), jadi begitu playback
-  lanjut, seek-bar pasti pulih tanpa pemicu eksternal — sengaja dipilih untuk menghindari risiko
-  seek-bar freeze setelah resume. Penghentian penuh tetap hanya di `handleOnDestroy()`.
-- Murni Kotlin lifecycle (tak ada harness JVM di lingkungan ini) → divalidasi lewat pembacaan kode +
-  brace-balance semua `.kt` seimbang + 164 test TS tetap hijau. **Bukti akhir: CI + device.**
+### Changed — Migrasi Capacitor 6 → 8: paruh JS SELESAI & tervalidasi
+- `package.json` dinaikkan ke Capacitor 8 (`@capacitor/core|cli|android|app|browser|splash-screen` +
+  `@capacitor-community/sqlite` @ ^8). Diverifikasi bertahap (6→7 lalu 7→8) di container: **`tsc`
+  bersih, 166 tes lolos, `vite build` sukses di kedua versi — TANPA perubahan kode.**
+- **Temuan penting:** API JS `@capacitor-community/sqlite` (titik risiko terbesar migrasi) **tidak
+  berubah** 6→8; `db.ts`/`queries.ts` tetap kompatibel. Ini menutup ketidakpastian terbesar checklist
+  dengan bukti nyata sebelum investasi build native.
+- `MIGRASI-CAPACITOR-8.md` diperbarui: langkah `npm i` (1a/2a) ditandai SELESAI; yang tersisa hanya
+  paruh **native/gradle** (variables.gradle, AGP, `kotlinOptions`→`compilerOptions`, sintaks `=`,
+  minSdk 24). **Peringatan:** app belum bisa di-build sampai paruh native diselesaikan (JS kini Cap 8,
+  native mungkin masih Cap 6).
 
-### Changed — drain backlog kini per-batch (≤50), bukan 1 API call/track
-- **Sebelumnya:** `drainAndFlushNative` memanggil `enqueueScrobble` per track, dan tiap enqueue
-  langsung flush → tiap track jadi satu panggilan `track.scrobble` sendiri (terlihat di log device
-  13:13: `scrobbleBatch KIRIM: 1 track` berulang 14×). Untuk backlog ratusan track (offline lama)
-  ini jadi ratusan round-trip berurutan — lambat & rawan throttle Last.fm.
-- **Sekarang:** `enqueueScrobble` dipecah jadi `enqueueScrobbleNoFlush` (enqueue saja) + versi biasa
-  (enqueue + flush, untuk scrobble real-time tunggal). Drain memakai NoFlush untuk SEMUA track lalu
-  **satu** `flushQueue` di akhir; `getQueueBatch(MAX_SCROBBLE_BATCH=50)` yang sudah ada kini benar-benar
-  menumpuk & mengirim per batch ≤50. Ratusan track → ~⌈N/50⌉ panggilan, bukan N.
-- Perilaku scrobble real-time tunggal (dari listener) TIDAK berubah — tetap flush tiap track.
-- **Pure-logic + TDD:** partisi baris beracun/layak diekstrak jadi `partitionByAttempts` di
-  `scrobbleLogic.ts` (dulu inline di `flushQueueOnce`) + konstanta `MAX_SCROBBLE_BATCH`. RED→GREEN,
-  **6 test baru**, total **164 test lolos**. `tsc` bersih (2 error `Intl.Segmenter` pra-ada tak terkait).
-- **Tervalidasi device (SM-X706B):** log 22:40:58 — 6 scrobble latar (ditangkap 22:13–22:39) di-drain
-  sebagai **6 `enqueue MASUK` tanpa flush di antaranya → satu `flush` → `scrobbleBatch KIRIM: 6 track`**
-  (bukan 6× `1 track`), `Last.fm terima 6/6 ditolak 0`, `addHistoryBatch OK: 6 baris` (tanpa duplikat).
-  Prediksi "satu baris N>1" terpenuhi.
 
-### Fixed — Log Peristiwa tak lagi dipenuhi flush kosong
-- Timer sinkronisasi 20 dtk (`App.tsx`) memanggil `flushQueue` terus-menerus. `flushQueueOnce` menulis
-  `flush: sesi OK, mulai kirim batch` ke Log Peristiwa SEBELUM mengecek antrean kosong — sehingga saat
-  idle, ring-buffer 100 baris terisi noise dan menggusur baris diagnostik berguna (terlihat di log
-  device: baris tsb berulang tiap 20 dtk tanpa scrobble apa pun sesudahnya).
-- Kini flush yang antreannya kosong = no-op senyap (cek `getQueueBatch(1)` murah dulu, baru log).
-- **Tervalidasi device:** log 13:13:31–36 menunjukkan pipeline scrobble tembus penuh — 14 track Spotify
-  berturut, `Last.fm terima 1/1` + `addHistoryBatch OK` semua, 0 ditolak. Timestamp asli (waktu mulai)
-  ikut terkirim sesuai spek Last.fm. Isu "core scrobble belum tervalidasi device" — **selesai.**
+### Added — panduan migrasi Capacitor 6 → 8 (`MIGRASI-CAPACITOR-8.md`)
+- Riset audit dependensi: sisi npm banyak yang tertinggal (Capacitor 6→8, React 18→19, Vite 5→8,
+  Vitest 2→4, TypeScript 5→7, Tailwind 3→4). Kesimpulan: hampir semua lompatan MAJOR — jangan
+  di-bump serentak. Yang paling bernilai & mendesak: Capacitor 8 (kepatuhan target-SDK Play Store,
+  Android 15/16), tapi native & device-gated (tak bisa divalidasi di sesi tanpa Android SDK).
+- Dibuat checklist bertahap 6→7→8 ter-tailor ke Scrola, dari panduan resmi Capacitor (`updating/7-0`,
+  `8-0`, `plugins/8-0`): nilai `variables.gradle` persis per tahap, AGP 8.7.2→8.13.0, sintaks properti
+  Gradle `=`, `kotlinOptions{}`→`compilerOptions{}` (JVM_21), minSdk 23→24.
+- **Titik risiko Scrola disorot:** `@capacitor-community/sqlite` (dipakai berat — API JS bisa berubah,
+  wajib uji DB tiap tahap), 6 plugin native kustom (hanya build config, API stabil), Media3 sudah 1.10
+  (kompatibel), manifest/config sudah benar. Termasuk langkah verifikasi per tahap + rollback.
 
-### Internal — audit RAM/memory (lanjutan sesi sebelumnya)
-- Audit jejak memori/lifecycle native. Kondisi awal ternyata sudah rapi: `PlaybackService.onDestroy`
-  memanggil `cancelIdleStop()` + `player.release()` + `mediaSession.release()`; `PlayerPlugin`
-  menghentikan position-poll di `handleOnDestroy()`; `ScrolaNotificationListener.cleanupAllCallbacks()`
-  melepas semua callback controller + `OnActiveSessionsChangedListener`.
-- **Fixed (leak kecil, nyata):** `cleanupAllCallbacks()` tidak membatalkan `eligibilityRunnable` yang
-  pending. Saat izin notifikasi dicabut / listener di-destroy dengan timer eligibility masih menunggu
-  (`postDelayed`, s.d. `wait` ms), Runnable itu tetap antre di main looper — menahan referensi ke
-  listener mati + state track lama, lalu tetap eksekusi pasca-teardown. Kini dibatalkan di cleanup,
-  simetris dengan cancel-sebelum-reschedule yang sudah ada.
-- **Catatan:** (1) position-poll `PlayerPlugin` repost tiap 1 dtk walau idle/pause — **kini
-  ditindaklanjuti** (lihat entri "position-poll adaptif" di atas). (2) `NativeEventLog`
-  read-modify-write nulis ulang seluruh file tiap event tapi dibatasi ≤100 baris (beberapa KB) — aman,
-  tak diubah.
-- Validasi: brace/paren balance semua `.kt` seimbang; perubahan murni lifecycle Android (tak ada
-  logika murni untuk disimulasikan Vitest), jadi divalidasi lewat pembacaan kode + simetri. **Bukti
-  akhir tetap: build CI + perilaku device.**
+
+### Changed — dokumentasi dependency Media3 dinaikkan 1.4.1 → 1.10.0 (dengan audit migrasi)
+- Riset: Media3 stabil terkini 1.10.0 (Maret 2026). README (instruksi setup) dinaikkan dari 1.4.1.
+- **Audit migrasi terhadap `PlaybackService.kt`:** upgrade **tidak butuh perubahan kode** — Scrola
+  hanya memakai API inti stabil (`ExoPlayer.Builder`, `DefaultLoadControl`, `AudioAttributes`,
+  `MediaSession.Builder`, `MediaSessionService`, `Player.Listener`, `MediaItem`/`MediaMetadata`,
+  `setWakeMode`). Breaking changes yang ada tidak menyentuh Scrola: MediaSessionService kini
+  `LifecycleService` (mundur-kompatibel); method wajib baru hanya untuk `MediaNotification.Provider`
+  KUSTOM (Scrola pakai default); `FrameExtractor` pindah modul (fitur video, tak dipakai).
+- **Syarat build terpenuhi:** minSdk 23 (= syarat 1.10) dan compileSdk 35 + Java 17 (Scrola sudah).
+- Manfaat: perbaikan bug gapless/offload, audio focus & routing, float PCM; opsi efisiensi baru
+  `experimentalSetDynamicSchedulingEnabled()`. Refleksi ReplayGain tetap kompatibel (kelas
+  `VorbisComment`/frame ID3 dibaca via field publik, tak tergantung nama kelas).
+- **Belum divalidasi build** (tak ada Android SDK di sesi ini) — jalankan `gradle build` + uji
+  perangkat setelah menaikkan versi di `android/app/build.gradle`.
+
+
+### Added — ReplayGain (normalisasi loudness) untuk pemutar internal
+- **Riset referensi** (Poweramp, Auxio, Oto, Pulsar, AIMP, dll.): fitur "kualitas" yang paling
+  universal untuk pemutar file lokal adalah **gapless**, **ReplayGain**, dan **equalizer**. Yang
+  audiophile-tier (bit-perfect/hi-res, bypass resampler Android) sengaja TIDAK dikejar — kompleks,
+  tergantung DAC, dan di luar cakupan Scrola (yang meneruskan file apa adanya).
+- **Diterapkan: ReplayGain** — menyamakan tingkat kekerasan antar-lagu supaya tak ada lonjakan
+  volume mengejutkan. Gain dibaca dari tag yang SUDAH di-parse ExoPlayer (`onMetadata`: ID3 TXXX
+  untuk MP3, Vorbis comment untuk FLAC/OGG) — format-agnostik, tanpa library tag terpisah.
+  - `ReplayGain.kt` murni (parse "-6.48 dB" → dB, dB→linear, **clip-safe** clamp ≤ 1.0 sehingga
+    gain positif tak pernah menimbulkan distorsi). **Divalidasi 18 test Kotlin** (kotlinc).
+  - Ekstraksi tag via **refleksi field publik** (description/text, key/value) agar tebakan nama
+    kelas Media3 yang salah tak bisa mematahkan build — degradasi jadi no-op, bukan crash.
+  - Volume di-reset ke unity tiap track baru; `onMetadata` menyesuaikan bila ada tag gain. Ada log
+    `PEMUTAR: ReplayGain … -> volume …` untuk verifikasi.
+- **Batas jujur:** hanya berpengaruh pada file yang MEMANG punya tag ReplayGain (perlu di-scan/tag
+  dulu oleh tool seperti foobar2000/MusicBrainz Picard). Default clip-safe (hanya meredam, boost
+  dibatasi unity). Belum ada UI toggle/pre-amp (bisa jadi tahap lanjutan). Perubahan native —
+  **wajib divalidasi di perangkat.**
+- **Tidak diterapkan sekarang (butuh keputusan/arsitektur):** gapless (butuh fitur ANTREAN dulu —
+  pemutar kini memutar satu file per waktu) dan equalizer (butuh UI + efek audio native). Keduanya
+  kandidat besar berikutnya.
+
+
+### Fixed — pemutar internal stuttering & berhenti mendadak sebelum lagu selesai
+- **Akar:** ExoPlayer TIDAK memegang wake lock secara default, dan izin `WAKE_LOCK` belum
+  dideklarasikan. Akibatnya saat layar mati / perangkat masuk mode idle (Doze), CPU tidur di tengah
+  pemutaran → audio tersendat lalu berhenti sebelum lagu selesai. Ini penyebab klasik masalah
+  pemutaran file lokal di latar.
+- **Perbaikan:** tambah `setWakeMode(C.WAKE_MODE_LOCAL)` pada ExoPlayer (menahan partial wake lock
+  CPU selama memutar, dilepas otomatis saat pause/stop/selesai) + deklarasi izin
+  `android.permission.WAKE_LOCK` di manifest. Foreground service type sudah benar (`mediaPlayback`).
+- **Observabilitas:** tambah `onPlayerError` yang mencatat sebab error decode/IO ke Log Peristiwa
+  (`PEMUTAR: error — …`), jadi kalau pemutaran masih berhenti karena sebab lain, alasannya terlihat
+  alih-alih berhenti diam-diam ("get real logs first").
+- **Batas jujur:** ini perubahan native — **wajib divalidasi di perangkat.** Uji: putar lagu penuh
+  dengan layar dimatikan; audio harus mulus sampai selesai tanpa berhenti. Kalau masih berhenti,
+  cek Log Peristiwa untuk baris `PEMUTAR: error` untuk sebab spesifik.
+
+
+### Added — daftar blokir sumber (menutup deteksi non-musik)
+- Menutup kelemahan warisan pendekatan NotificationListener (diakui Pano juga): tak ada cara pasti
+  membedakan musik vs non-musik dari metadata. Solusi: pengguna bisa **memblokir app** yang
+  menghasilkan scrobble sampah (podcast, video, game, browser).
+- **UI:** chip "Sumber terdeteksi" di Pengaturan kini bisa DITAP untuk blokir/buka — yang diblokir
+  tampil dicoret & redup, dengan petunjuk singkat.
+- **Logika murni** `blocklist.ts` (`isSourceBlocked`, `toggleBlocked`, +6 test) + `blocklistStore.ts`
+  (SecureStore + cache). Scrobble dari paket terblokir DILEWATI saat penyerapan di `drainAndFlushNative`
+  (pola sama dengan filter "scrobble dari app lain"). Blokir per-paket (exact match).
+- Total 166 test lolos; tsc bersih; build sukses; mockup PIL memvalidasi tata letak. Render UI belum
+  divalidasi di device.
+- **Batas:** ini blokir tingkat-APP. Blokir per-artis/channel yang lebih halus (juga ada di Pano)
+  bisa jadi tahap lanjutan. Karena filter diterapkan saat drain, app terblokir masih sempat ditangkap
+  native lalu dibuang — pemborosan kecil, tapi menjaga logika preferensi tetap di JS.
+
+
+### Added — pengelola "Koreksi Metadata" di Pengaturan (lihat & hapus aturan)
+- Melengkapi fitur "belajar dari koreksi" dan menutup batas yang ditandai sebelumnya: kalau salah
+  "mengajari", kini bisa dibatalkan dari dalam app (paritas dengan Pano yang menampilkan aturan).
+- Seksi baru di SettingsScreen menampilkan tiap aturan (hasil koreksi + sumber "dari:"), tombol
+  **Hapus** per-aturan, dan **Hapus semua**. Empty state saat belum ada aturan.
+- Logika murni baru `removeRule` (+2 test) + `deleteCorrection`/`clearCorrections` di
+  `correctionsStore`. Total 160 test lolos; tsc bersih; build sukses; mockup PIL memvalidasi tata
+  letak. Render UI belum divalidasi di device.
+
+
+### Changed — audit penggunaan RAM/memori + perbaikan cleanup listener
+- **Audit menyeluruh** memori/RAM. Temuan: sisi native SUDAH hati-hati — album art di-downscale
+  (`ImageUtils.downscaleIfNeeded` via `inSampleSize`) sebelum di-base64, dan byte yang sama dipakai
+  untuk data-URI + artwork MediaSession (tidak digandakan); `ExoPlayer` dilepas di `onDestroy`/
+  `STATE_ENDED`; `MediaMetadataRetriever` dilepas; listener & interval JS punya cleanup; Log
+  Peristiwa dibatasi 100 baris; Riwayat dimuat maksimum 100 baris; ticker bar hanya me-render saat
+  nilai berubah.
+- **Diperbaiki (celah nyata):** `cleanupAllCallbacks()` di `ScrolaNotificationListener` kini juga
+  melepas `eligibilityRunnable` yang mungkin masih tertunda saat listener terputus — sebelumnya
+  Runnable bisa menggantung di main looper dan menahan referensi.
+- **Sengaja TIDAK diubah (keputusan sadar):** (1) ticker 1 detik bar "Sedang Diamati" tetap jalan
+  saat foreground walau idle — sudah near-no-op (early-return saat tak ada yang diputar) dan
+  gating-nya menambah kompleksitas/risiko untuk manfaat marginal; (2) `PendingScrobbleStore` tanpa
+  cap keras — sudah terbatas dalam praktik karena di-drain tiap app aktif (resume + tiap 20s), dan
+  cap read-on-append malah memperburuk I/O.
+- **Batas jujur:** baseline RAM sebuah app Capacitor didominasi WebView-nya (inheren, ~puluhan MB)
+  — ini tak bisa dipangkas tanpa mengubah arsitektur. Konsumsi RAM sebenarnya hanya bisa diukur di
+  perangkat (mis. `adb shell dumpsys meminfo com.scrola.app`); audit ini menutup kebocoran kode,
+  bukan menggantikan pengukuran perangkat.
+
 
 ### Fixed — lagu yang DIULANG kini tercatat ulang (deteksi repeat)
 - **Bug:** `applyEvent` tak reset saat `trackKey` sama, jadi memutar lagu yang sama berkali-kali

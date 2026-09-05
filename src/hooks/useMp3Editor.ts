@@ -16,8 +16,6 @@ export function useMp3Editor() {
   const [newAlbumArt, setNewAlbumArt] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  // `error` menyimpan KUNCI i18n (bukan teks jadi) — pemanggil menerjemahkan dengan t(error) saat
-  // render, jadi pesan mengikuti bahasa aktif termasuk saat diganti sewaktu error tampil.
   const [error, setError] = useState<string | null>(null);
   // Guard SINKRON untuk mencegah save ganda. setSaving(true) bersifat async (baru berlaku di
   // render berikutnya), jadi kalau tombol Simpan ter-tap dua kali sangat cepat, pengecekan
@@ -42,32 +40,8 @@ export function useMp3Editor() {
       });
       setNewAlbumArt(undefined); // reset penanda "artwork diubah" tiap kali pilih file baru
     } catch (e) {
-      setError('err.mp3.pick');
+      setError('Gagal membaca file MP3 yang dipilih. Pastikan formatnya benar.');
       console.warn('pickMp3ToEdit gagal:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Muat metadata dari URI yang sudah dimiliki (mis. lagu yang sedang diputar) — tanpa picker.
-  const loadUri = useCallback(async (uri: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const meta = await Mp3MetadataNative.readMetadata({ uri });
-      setCurrent(meta);
-      setFields({
-        title: meta.title,
-        artist: meta.artist,
-        album: meta.album,
-        albumArtist: meta.albumArtist,
-        year: meta.year,
-        genre: meta.genre,
-      });
-      setNewAlbumArt(undefined);
-    } catch (e) {
-      setError('err.mp3.read');
-      console.warn('readMetadata gagal:', e);
     } finally {
       setLoading(false);
     }
@@ -105,7 +79,7 @@ export function useMp3Editor() {
       });
       return true;
     } catch (e) {
-      setError('err.mp3.save');
+      setError('Gagal menyimpan metadata. File mungkin tidak bisa ditulis (read-only) atau rusak.');
       console.warn('saveMetadata gagal:', e);
       return false;
     } finally {
@@ -129,7 +103,6 @@ export function useMp3Editor() {
     saving,
     error,
     pickFile,
-    loadUri,
     updateField,
     removeAlbumArt,
     setAlbumArtDataUri,

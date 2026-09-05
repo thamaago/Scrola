@@ -86,8 +86,45 @@ class PlaybackService : MediaSessionService() {
             // pemutar musik (tanpa ini, lagu tiba-tiba menggelegar dari speaker HP saat earphone
             // tercabut, mengganggu & memalukan di tempat umum).
             .setHandleAudioBecomingNoisy(true)
+            // WAKE_MODE_LOCAL: tahan partial wake lock (CPU) selama memutar file LOKAL, supaya
+            // pemutaran tidak tersendat/berhenti saat layar mati atau perangkat masuk mode idle
+            // (Doze). Ini penyebab utama "musik stuttering & berhenti sebelum selesai". Butuh izin
+            // WAKE_LOCK di manifest. Wake lock otomatis dilepas ExoPlayer saat pause/stop/selesai.
+            .setWakeMode(androidx.media3.common.C.WAKE_MODE_LOCAL)
             .build().apply {
                 addListener(object : Player.Listener {
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        // Kalau pemutaran berhenti karena error (decode/IO), catat SEBABNYA ke Log
+                        // Peristiwa supaya bisa didiagnosis di perangkat alih-alih berhenti diam-diam.
+                        NativeEventLog.append(
+                            applicationContext,
+                            "PEMUTAR: error — ${error.errorCodeName}: ${error.message ?: "?"}"
+                        )
+                    }
+
+                    override fun onMediaItemTransition(
+                        item: MediaItem?,
+                        reason: Int
+                    ) {
+                        // Saat pindah track dalam antrean (auto-advance gapless atau next/prev),
+                        // beri tahu JS indeks baru supaya QueueState.position tetap sinkron.
+                        val idx = exoPlayer?.currentMediaItemIndex ?: 0
+                        val payload = org.json.JSONObject().apply { put("index", idx) }
+                        PlayerPlugin.emit("queueIndexChanged", payload)
+                    }
+
+                    override fun onMetadata(metadata: androidx.media3.common.Metadata) {
+                        // ReplayGain: samakan loudness antar-lagu. Gain dibaca dari tag yang sudah
+                        // di-parse ExoPlayer (ID3 TXXX / Vorbis comment). Volume clip-safe (<=1.0).
+                        val raw = extractTrackGain(metadata) ?: return
+                        val vol = ReplayGain.volumeFromTag(raw) ?: return
+                        exoPlayer?.volume = vol
+                        NativeEventLog.append(
+                            applicationContext,
+                            "PEMUTAR: ReplayGain $raw -> volume ${"%.2f".format(vol)}"
+                        )
+                    }
+
                     override fun onPlaybackStateChanged(state: Int) {
                         if (state == Player.STATE_READY) {
                             // Durasi baru diketahui setelah READY. Simpan ke cache lintas-thread
@@ -145,10 +182,36 @@ class PlaybackService : MediaSessionService() {
         idleStopRunnable = null
     }
 
+    /**
+     * Ambil nilai REPLAYGAIN_TRACK_GAIN dari metadata yang di-parse ExoPlayer. Memakai REFLEKSI
+     * field publik (description/text untuk ID3 TXXX, key/value untuk Vorbis comment) supaya TIDAK
+     * bergantung pada nama kelas Media3 yang bisa berbeda antar-versi — kalau field tak ada, fitur
+     * ini cukup nonaktif diam-diam (tak crash, tak gagal build). null bila tak ada tag gain.
+     */
+    private fun extractTrackGain(metadata: androidx.media3.common.Metadata): String? {
+        for (i in 0 until metadata.length()) {
+            val e: Any = metadata.get(i) ?: continue
+            val keyName = readStringField(e, "description") ?: readStringField(e, "key") ?: continue
+            if (!ReplayGain.isTrackGainKey(keyName)) continue
+            val value = readStringField(e, "text") ?: readStringField(e, "value") ?: continue
+            return value
+        }
+        return null
+    }
+
+    private fun readStringField(obj: Any, field: String): String? = try {
+        (obj.javaClass.getField(field).get(obj) as? String)
+    } catch (e: Exception) {
+        null
+    }
+
     fun playUri(uri: String, title: String, artist: String, albumArtBytes: ByteArray? = null) {
         cancelIdleStop()
         lastKnownDurationMs = 0L // track baru: durasi lama tidak berlaku sampai READY lagi
         val player = exoPlayer ?: return
+        // Reset volume ke unity untuk track baru: kalau track sebelumnya diredam ReplayGain, track
+        // ini harus mulai penuh dulu; onMetadata akan menyesuaikan lagi bila ada tag gain.
+        player.volume = 1.0f
         val metadataBuilder = androidx.media3.common.MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)
@@ -163,6 +226,52 @@ class PlaybackService : MediaSessionService() {
         player.prepare()
         player.play()
     }
+
+    /** Satu entri antrean dari sisi JS (metadata dasar; art di-skip untuk antrean demi hemat). */
+    data class QueueItem(val uri: String, val title: String, val artist: String)
+
+    /**
+     * Putar SEBUAH ANTREAN via setMediaItems -> GAPLESS otomatis di Media3 untuk format kompatibel.
+     * `items` sudah dalam urutan main final dari JS (playbackQueue.orderedUris; shuffle ditangani JS).
+     * Repeat ditangani ExoPlayer via setRepeatMode agar loop-nya juga gapless. Volume di-reset;
+     * onMetadata akan menyesuaikan ReplayGain per track.
+     */
+    fun playQueue(items: List<QueueItem>, startIndex: Int) {
+        cancelIdleStop()
+        lastKnownDurationMs = 0L
+        val player = exoPlayer ?: return
+        if (items.isEmpty()) return
+        player.volume = 1.0f
+        val mediaItems = items.map {
+            MediaItem.Builder()
+                .setUri(it.uri)
+                .setMediaMetadata(
+                    androidx.media3.common.MediaMetadata.Builder()
+                        .setTitle(it.title)
+                        .setArtist(it.artist)
+                        .build()
+                )
+                .build()
+        }
+        val start = startIndex.coerceIn(0, mediaItems.size - 1)
+        player.setMediaItems(mediaItems, start, 0L)
+        player.playWhenReady = true
+        player.prepare()
+    }
+
+    /** Repeat ditangani native (loop gapless). JS tetap sumber kebenaran urutan (shuffle). */
+    fun setRepeatMode(mode: String) {
+        exoPlayer?.repeatMode = when (mode) {
+            "all" -> Player.REPEAT_MODE_ALL
+            "one" -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    fun skipNext() = exoPlayer?.seekToNextMediaItem() ?: Unit
+    fun skipPrev() = exoPlayer?.seekToPreviousMediaItem() ?: Unit
+    fun skipToIndex(index: Int) = exoPlayer?.seekToDefaultPosition(index) ?: Unit
+    fun currentQueueIndex(): Int = exoPlayer?.currentMediaItemIndex ?: 0
 
     // PERINGATAN THREAD: SEMUA method di bawah ini menyentuh ExoPlayer, yang MENOLAK diakses dari
     // thread selain main dan melempar IllegalStateException ("Player is accessed on the wrong

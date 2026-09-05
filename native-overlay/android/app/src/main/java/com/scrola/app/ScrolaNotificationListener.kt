@@ -143,9 +143,8 @@ class ScrolaNotificationListener : NotificationListenerService() {
         activeCallbacks.forEach { (controller, cb) -> controller.unregisterCallback(cb) }
         activeCallbacks.clear()
         mediaSessionManager?.removeOnActiveSessionsChangedListener(sessionListener)
-        // Timer eligibility yang masih menunggu (postDelayed) tetap nangkring di main looper dan
-        // mereferensikan listener + state track lama sampai berbunyi — walau service sudah teardown.
-        // Batalkan di sini supaya tidak ada pekerjaan pasca-destroy & tidak menahan referensi.
+        // Lepas timer kelayakan yang mungkin masih tertunda supaya tidak ada Runnable menggantung
+        // di main looper (menahan referensi) setelah listener terputus.
         eligibilityRunnable?.let { mainHandler.removeCallbacks(it) }
         eligibilityRunnable = null
         ScrobbleForegroundService.stop(applicationContext)

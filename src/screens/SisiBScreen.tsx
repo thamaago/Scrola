@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { getHistoryInRange, getDistinctArtistsBefore } from '../lib/db/queries';
 import {
@@ -7,10 +7,8 @@ import {
   formatDurationHuman,
   type SisiBStats,
 } from '../lib/sisiBLogic';
-import { renderSisiBZine } from '../lib/sisiBZineImage';
-import { SharePlugin } from '../lib/share';
-import { useI18n } from '../lib/i18nContext';
-import { formatDate } from '../lib/i18nFormat';
+
+const HARI = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
 
 /**
  * SisiBScreen — rekap mingguan sebagai cerita, bukan dashboard angka.
@@ -23,14 +21,11 @@ export default function SisiBScreen({
   open,
   onClose,
   onOpenBabAlbum,
-  onOpenPenemuan,
 }: {
   open: boolean;
   onClose: () => void;
   onOpenBabAlbum?: () => void;
-  onOpenPenemuan?: () => void;
 }) {
-  const { t, tp, locale, weekday } = useI18n();
   const [stats, setStats] = useState<SisiBStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -38,10 +33,6 @@ export default function SisiBScreen({
   // supaya transisi CSS-nya benar-benar terlihat (kalau langsung di nilai akhir, tidak ada animasi).
   const [barsIn, setBarsIn] = useState(false);
   const [weekLabel, setWeekLabel] = useState('');
-  const [weekStartSec, setWeekStartSec] = useState<number | null>(null);
-  const [sharing, setSharing] = useState(false);
-  const [shareError, setShareError] = useState<string | null>(null);
-  const sharingRef = useRef(false);
 
   useEffect(() => {
     if (!open) {
@@ -67,10 +58,9 @@ export default function SisiBScreen({
 
         const result = computeSisiBStats(rows, artistsBefore, weekStartSec);
         setStats(result);
-        setWeekStartSec(weekStartSec);
 
         const weekEnd = new Date((weekStartSec + 6 * 86400) * 1000);
-        const fmt = (d: Date) => formatDate(locale, d, { day: 'numeric', month: 'short' });
+        const fmt = (d: Date) => d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
         setWeekLabel(`${fmt(weekStart)} – ${fmt(weekEnd)}`);
 
         // Beri sedikit jeda agar transisi tinggi bar benar-benar teranimasi dari 0.
@@ -90,7 +80,7 @@ export default function SisiBScreen({
     return () => {
       cancelled = true;
     };
-  }, [open, locale]);
+  }, [open]);
 
   // Tombol back Android menutup overlay, bukan keluar dari app.
   useEffect(() => {
@@ -103,28 +93,6 @@ export default function SisiBScreen({
 
   const maxDayCount = stats ? Math.max(...stats.dayCounts, 1) : 1;
   const busiestDay = stats ? stats.dayCounts.indexOf(Math.max(...stats.dayCounts)) : -1;
-
-  async function handleShare() {
-    if (sharingRef.current || !stats || weekStartSec === null) return;
-    sharingRef.current = true;
-    setSharing(true);
-    setShareError(null);
-    try {
-      const base64 = await renderSisiBZine(stats, weekStartSec);
-      await SharePlugin.shareImage({
-        base64,
-        filename: 'scrola-sisib.png',
-        title: t('sisib.share.title'),
-      });
-    } catch (e) {
-      console.warn('Gagal membagikan Sisi B:', e);
-      setShareError('common.shareImageError');
-      setTimeout(() => setShareError(null), 3000);
-    } finally {
-      sharingRef.current = false;
-      setSharing(false);
-    }
-  }
   const hasData = stats != null && stats.totalTracks > 0;
 
   return (
@@ -146,27 +114,28 @@ export default function SisiBScreen({
 
       <div className="relative px-7 pt-10 pb-12 min-h-full flex flex-col">
         <div className="flex justify-between items-center">
-          <p className="font-mono text-[10px] tracking-[0.3em] text-coral uppercase">{t('sisib.eyebrow')}</p>
+          <p className="font-mono text-[10px] tracking-[0.3em] text-coral uppercase">Sisi B</p>
           <button onClick={onClose} className="text-muted text-[13px]">
-            {t('common.close')} ✕
+            Tutup ✕
           </button>
         </div>
 
-        {loading && <p className="text-muted text-sm mt-8">{t('sisib.loading')}</p>}
+        {loading && <p className="text-muted text-sm mt-8">Menyusun ceritamu…</p>}
 
         {error && (
           <p className="text-coral text-sm mt-8">
-            {t('sisib.error')}
+            Gagal menyusun rekap. Coba tutup dan buka lagi.
           </p>
         )}
 
         {!loading && !error && !hasData && (
           <div className="flex-1 flex flex-col justify-center text-center">
             <h1 className="font-display text-[28px] leading-tight font-semibold text-paper">
-              {t('sisib.empty.title')}
+              Minggu ini masih sunyi.
             </h1>
             <p className="text-muted text-sm mt-3 leading-relaxed">
-              {t('sisib.empty.body')}
+              Belum ada lagu yang tercatat minggu ini. Putar sesuatu — ceritanya akan mulai
+              menulis dirinya sendiri.
             </p>
           </div>
         )}
@@ -174,11 +143,15 @@ export default function SisiBScreen({
         {!loading && !error && hasData && stats && (
           <>
             <h1 className="font-display text-[32px] leading-[1.15] font-semibold text-paper mt-3.5">
-              {t('sisib.hero', { artist: stats.topArtist ?? '' })}
+              Minggu ini,
+              <br />
+              ceritamu berbunyi
+              <br />
+              seperti {stats.topArtist}.
             </h1>
             <p className="text-muted text-[13px] mt-3.5 mb-7 leading-relaxed">
-              {weekLabel} · {tp('count.tracks', stats.totalTracks)} · {tp('count.artists', stats.totalArtists)}
-              {stats.totalDurationSec > 0 && ` · ${formatDurationHuman(stats.totalDurationSec, locale)}`}
+              {weekLabel} · {stats.totalTracks} lagu · {stats.totalArtists} artis
+              {stats.totalDurationSec > 0 && ` · ${formatDurationHuman(stats.totalDurationSec)}`}
             </p>
 
             <div className="flex flex-col gap-3">
@@ -188,13 +161,13 @@ export default function SisiBScreen({
                   <div className="ticket-perforation shrink-0" aria-hidden="true" />
                   <div className="flex-1 py-3.5 px-4 min-w-0">
                     <p className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase">
-                      {t('sisib.goldTicket')}
+                      Tiket Emas — lagu minggu ini
                     </p>
                     <h3 className="font-display text-[19px] font-semibold text-paper mt-1 truncate">
                       {stats.topTrack.track}
                     </h3>
                     <p className="text-[13px] text-muted truncate">
-                      {stats.topTrack.artist} · {t('stats.plays', { count: stats.topTrack.playCount })}
+                      {stats.topTrack.artist} · diputar {stats.topTrack.playCount}×
                     </p>
                   </div>
                 </div>
@@ -203,45 +176,30 @@ export default function SisiBScreen({
               <div className="flex gap-3">
                 <div className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4">
                   <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-                    {t('sisib.goldHour')}
+                    Jam emas
                   </p>
                   <p className="font-display text-xl font-semibold text-paper mt-1">
                     {stats.peakHour !== null
                       ? `${stats.peakHour.toString().padStart(2, '0')}.00`
                       : '—'}
                   </p>
-                  <p className="text-xs text-muted mt-0.5">{t('sisib.goldHour.sub')}</p>
+                  <p className="text-xs text-muted mt-0.5">paling sering mendengar</p>
                 </div>
-                {onOpenPenemuan ? (
-                  <button
-                    onClick={onOpenPenemuan}
-                    className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4 text-left active:scale-[0.99] transition-transform"
-                  >
-                    <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-                      {t('penemuan.eyebrow')}
-                    </p>
-                    <p className="font-display text-xl font-semibold text-paper mt-1">
-                      {tp('count.artists', stats.newArtistCount)}
-                    </p>
-                    <p className="text-xs text-amber mt-0.5">{t('sisib.penemuan.newSeeAll')}</p>
-                  </button>
-                ) : (
-                  <div className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4">
-                    <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
-                      {t('penemuan.eyebrow')}
-                    </p>
-                    <p className="font-display text-xl font-semibold text-paper mt-1">
-                      {tp('count.artists', stats.newArtistCount)}
-                    </p>
-                    <p className="text-xs text-muted mt-0.5">{t('sisib.penemuan.newLogged')}</p>
-                  </div>
-                )}
+                <div className="flex-1 bg-surface border border-white/5 rounded-[10px] py-3.5 px-4">
+                  <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase">
+                    Penemuan
+                  </p>
+                  <p className="font-display text-xl font-semibold text-paper mt-1">
+                    {stats.newArtistCount} artis
+                  </p>
+                  <p className="text-xs text-muted mt-0.5">baru pertama tercatat</p>
+                </div>
               </div>
 
               {/* Irama minggu — 7 bar, hari tersibuk disorot */}
               <div className="bg-surface border border-white/5 rounded-[10px] py-3.5 px-4">
                 <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase mb-2.5">
-                  {t('sisib.rhythm')}
+                  Irama minggu
                 </p>
                 <div className="flex items-end gap-1.5 h-14">
                   {stats.dayCounts.map((count, i) => (
@@ -254,19 +212,19 @@ export default function SisiBScreen({
                         height: barsIn ? `${Math.max((count / maxDayCount) * 100, 4)}%` : '4%',
                         transition: `height 0.6s cubic-bezier(0.22,1,0.36,1) ${0.15 + i * 0.05}s`,
                       }}
-                      aria-label={t('sisib.aria.dayCount', { day: weekday(i, 'short'), count })}
+                      aria-label={`${HARI[i]}: ${count} lagu`}
                     />
                   ))}
                 </div>
                 <div className="flex gap-1.5 mt-1.5">
-                  {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                  {HARI.map((h, i) => (
                     <span
-                      key={i}
+                      key={h}
                       className={`flex-1 text-center font-mono text-[9px] ${
                         i === busiestDay ? 'text-amber' : 'text-muted'
                       }`}
                     >
-                      {weekday(i, 'short')}
+                      {h}
                     </span>
                   ))}
                 </div>
@@ -280,26 +238,22 @@ export default function SisiBScreen({
                 onClick={onOpenBabAlbum}
                 className="flex items-center justify-between w-full bg-surfaceRaised border border-white/5 rounded-lg py-3 px-4 mb-3 active:scale-[0.99] transition-transform"
               >
-                <span className="text-sm text-paper">{t('sisib.seeBabAlbum')}</span>
+                <span className="text-sm text-paper">Lihat rekap Bulan &amp; Tahun</span>
                 <span className="font-mono text-[10px] tracking-[0.15em] text-amber uppercase">
-                  {t('sisib.babAlbumTag')}
+                  Bab · Album →
                 </span>
               </button>
             )}
 
-            {/* Ekspor recap sebagai zine gambar (Canvas -> PNG -> share native). */}
+            {/* Fitur share ditandai jujur sebagai belum tersedia — lebih baik daripada tombol
+                yang tidak melakukan apa-apa saat ditekan. Ada di backlog DEVLOG. */}
             <button
-              onClick={handleShare}
-              disabled={sharing || !stats || weekStartSec === null}
-              className="border border-amber/40 text-amber font-body font-semibold text-sm rounded-lg py-3.5 px-6 active:scale-[0.99] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled
+              className="border border-amber/40 text-amber font-body font-semibold text-sm rounded-lg py-3.5 px-6 opacity-40 cursor-not-allowed"
+              title="Belum tersedia"
             >
-              {sharing ? t('ticket.preparing') : t('sisib.shareZine')}
+              Bagikan sebagai tiket (segera)
             </button>
-            {shareError && (
-              <p className="text-center text-xs text-red-300 mt-2" role="alert">
-                {t(shareError)}
-              </p>
-            )}
           </>
         )}
       </div>

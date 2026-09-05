@@ -1,5 +1,3 @@
-import { useI18n } from '../lib/i18nContext';
-
 interface StoryTicketProps {
   artist: string;
   title: string;
@@ -46,7 +44,6 @@ export default function StoryTicket({
   animateIn = false,
   onToggleLoved,
 }: StoryTicketProps) {
-  const { t } = useI18n();
   const isPrinting = variant === 'printing';
   const isFresh = variant === 'fresh';
   // Guard terhadap Date invalid (mis. timestamp korup dari DB) — tanpa ini, toLocaleTimeString
@@ -106,7 +103,7 @@ export default function StoryTicket({
               className="flex items-center justify-center w-11 h-11 -my-3.5 -mr-3 shrink-0"
               role="switch"
               aria-checked={!!loved}
-              aria-label={loved ? t('ticket.love.remove') : t('ticket.love.add')}
+              aria-label={loved ? 'Hapus tanda suka' : 'Tandai suka'}
             >
               <span
                 className={`text-[15px] transition-colors ${loved ? 'text-coral' : 'text-muted/40'}`}
@@ -116,7 +113,7 @@ export default function StoryTicket({
             </button>
           ) : (
             loved && (
-              <span className="text-coral text-[11px]" aria-label={t('ticket.love.loved')}>
+              <span className="text-coral text-[11px]" aria-label="Disukai">
                 ♥
               </span>
             )

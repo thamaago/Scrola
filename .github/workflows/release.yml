@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: |
@@ -63,13 +63,6 @@ jobs:
       - name: Pastikan gradlew bisa dieksekusi
         working-directory: android
         run: chmod +x ./gradlew
-
-      # Keystore debug TETAP (sama seperti build.yml) — supaya APK dari release konsisten dengan
-      # APK dari build.yml, dan keduanya terpasang sebagai UPDATE di perangkat (bukan uninstall).
-      - name: Pakai keystore debug tetap (agar terpasang sebagai update)
-        run: |
-          mkdir -p ~/.android
-          cp native-overlay/android/scrola-debug.keystore ~/.android/debug.keystore
 
       # CATATAN PENTING: build release APK butuh signing key (keystore). Sampai keystore disiapkan
       # dan didaftarkan sebagai GitHub Secret (lihat docs/GITHUB_SETUP.md), workflow ini tetap

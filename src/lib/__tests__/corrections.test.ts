@@ -3,6 +3,7 @@ import {
   matchKey,
   shouldRecordCorrection,
   upsertRule,
+  removeRule,
   applyCorrection,
   MAX_CORRECTION_RULES,
   type CorrectionRule,
@@ -53,6 +54,21 @@ describe('upsertRule', () => {
     expect(r.length).toBe(MAX_CORRECTION_RULES);
     // yang terbaru dipertahankan (dirty{MAX+19} ada di depan)
     expect(r[0].fromArtist).toBe(`dirty${MAX_CORRECTION_RULES + 19}`);
+  });
+});
+
+describe('removeRule', () => {
+  const rules: CorrectionRule[] = [
+    { fromArtist: 'Ch1', fromTrack: 'V1', toArtist: 'A1', toTrack: 'T1' },
+    { fromArtist: 'Ch2', fromTrack: 'V2', toArtist: 'A2', toTrack: 'T2' },
+  ];
+  it('membuang aturan yang cocok (case-insensitive)', () => {
+    const r = removeRule(rules, 'ch1', 'v1');
+    expect(r).toHaveLength(1);
+    expect(r[0].fromArtist).toBe('Ch2');
+  });
+  it('tidak mengubah kalau tak ada yang cocok', () => {
+    expect(removeRule(rules, 'X', 'Y')).toHaveLength(2);
   });
 });
 

@@ -6,7 +6,6 @@ import {
   formatDurationForCard,
   ticketNumber,
 } from './shareCardLayout';
-import { tActive } from './i18n';
 
 /**
  * shareImage.ts — merender tiket cerita jadi gambar PNG untuk dibagikan ke WhatsApp Status /
@@ -197,7 +196,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<string> {
 
   ctx.fillStyle = MUTED;
   ctx.textAlign = 'right';
-  ctx.fillText(tActive('share.card.ticketNo', { n: ticketNumber(input.timestampSec) }), cardX + cardW - 56, cardY + 78);
+  ctx.fillText(`TIKET ${ticketNumber(input.timestampSec)}`, cardX + cardW - 56, cardY + 78);
   ctx.letterSpacing = '0px';
 
   // ===== Album art (disc) =====
@@ -286,7 +285,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<string> {
   ctx.letterSpacing = '3px';
   ctx.textAlign = 'left';
   ctx.fillStyle = MUTED;
-  ctx.fillText(tActive('share.card.nowPlaying'), contentX, dashY + 52);
+  ctx.fillText('SEDANG DIPUTAR', contentX, dashY + 52);
   ctx.textAlign = 'right';
   ctx.fillStyle = AMBER;
   ctx.fillText(formatDurationForCard(input.durationSec ?? 0), cardX + cardW - 56, dashY + 52);

@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           # PENTING: opsi cache: npm di action ini MENSYARATKAN package-lock.json ada dan akan
           # membuat step ini gagal duluan (sebelum sempat mencapai fallback npm install di
           # bawah) kalau lockfile belum di-commit. Dihapus untuk sekarang — build jadi sedikit
@@ -88,16 +88,6 @@ jobs:
       - name: Pastikan gradlew bisa dieksekusi
         working-directory: android
         run: chmod +x ./gradlew
-
-      # Pakai keystore debug TETAP yang di-commit, bukan yang di-generate acak tiap run CI.
-      # Tanpa ini, setiap build ditandatangani kunci berbeda → Android menolak install di atas
-      # versi lama ("signatures do not match") → user harus UNINSTALL (dan kehilangan data).
-      # Dengan keystore tetap, tanda tangan konsisten → APK baru terpasang sebagai UPDATE, data aman.
-      - name: Pakai keystore debug tetap (agar terpasang sebagai update)
-        run: |
-          mkdir -p ~/.android
-          cp native-overlay/android/scrola-debug.keystore ~/.android/debug.keystore
-          echo "Keystore debug tetap terpasang → build ini akan konsisten dengan build lain."
 
       - name: Build debug APK
         working-directory: android

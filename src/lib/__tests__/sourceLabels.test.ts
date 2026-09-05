@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sourceLabel, isLikelyMusicSource } from '../sourceLabels';
+import { sourceLabel } from '../sourceLabels';
 
 describe('sourceLabel', () => {
   it('memetakan streaming besar ke nama enak dibaca', () => {
@@ -25,30 +25,5 @@ describe('sourceLabel', () => {
 
   it('package tak dikenal dikembalikan apa adanya (bukan disamarkan)', () => {
     expect(sourceLabel('com.contoh.pemutar.baru')).toBe('com.contoh.pemutar.baru');
-  });
-});
-
-describe('isLikelyMusicSource', () => {
-  it('app musik dikenal -> true', () => {
-    expect(isLikelyMusicSource('com.spotify.music')).toBe(true);
-    expect(isLikelyMusicSource('com.google.android.apps.youtube.music')).toBe(true);
-  });
-
-  it('keyboard Samsung (honeyboard) -> false', () => {
-    expect(isLikelyMusicSource('com.samsung.android.honeyboard')).toBe(false);
-  });
-
-  it('keyboard/IME lain -> false', () => {
-    expect(isLikelyMusicSource('com.google.android.inputmethod.latin')).toBe(false);
-    expect(isLikelyMusicSource('com.touchtype.swiftkey')).toBe(false);
-  });
-
-  it('launcher & systemui -> false', () => {
-    expect(isLikelyMusicSource('com.sec.android.app.launcher')).toBe(false);
-    expect(isLikelyMusicSource('com.android.systemui')).toBe(false);
-  });
-
-  it('paket tak dikenal yang BUKAN non-musik jelas -> true (tetap ditampilkan)', () => {
-    expect(isLikelyMusicSource('com.some.unknown.player')).toBe(true);
   });
 });

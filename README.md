@@ -25,15 +25,6 @@ dengan riwayat scrobble bergaya "tiket cerita".
 > - [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md) — kode etik kontributor.
 > - [`docs/RELEASES.md`](./docs/RELEASES.md) — catatan rilis siap-tempel untuk GitHub Releases +
 >   roadmap versi + kelebihan aplikasi.
-> - [`docs/POSITIONING.md`](./docs/POSITIONING.md) — positioning pasar Indonesia (untuk siapa &
->   kenapa, wedge lokal, perbandingan jujur vs Pano Scrobbler). Rujukan saat menulis deskripsi
->   Play Store / materi rilis.
-> - [`docs/REFERENSI_SCROBBLE_PANO.md`](./docs/REFERENSI_SCROBBLE_PANO.md) — pembelajaran mekanisme
->   submit scrobble dari Pano Scrobbler (GPL-3.0): pemetaan sudah/adopsi/tak-berlaku + rekomendasi
->   berprioritas (backoff, cabang error top-level, jeda antar batch).
-> - [`docs/REFERENSI_TAG_EDITOR.md`](./docs/REFERENSI_TAG_EDITOR.md) — pembelajaran editor tag MP3 dari
->   app sejenis (mp3agic/jaudiotagger/TagLib): fokus korektnes (encoding Unicode, album art, tulis
->   aman) ketimbang menambah fitur.
 > - [`docs/GITHUB_SETUP.md`](./docs/GITHUB_SETUP.md) — checklist langkah manual di GitHub UI
 >   (secrets, branch protection, rilis pertama) yang tidak bisa diotomasi dari scaffold ini.
 > - [`docs/PANDUAN_API_KEY.md`](./docs/PANDUAN_API_KEY.md) — **panduan langkah-demi-langkah
@@ -129,10 +120,22 @@ script karena format `build.gradle` bervariasi antar versi Capacitor. Buka
 `android/app/build.gradle`, cari blok `dependencies { ... }`, tambahkan:
 
 ```groovy
-implementation "androidx.media3:media3-exoplayer:1.4.1"
-implementation "androidx.media3:media3-session:1.4.1"
+implementation "androidx.media3:media3-exoplayer:1.10.0"
+implementation "androidx.media3:media3-session:1.10.0"
 implementation "com.mpatric:mp3agic:0.9.1"
 ```
+
+**Versi Media3 (1.10.0, Maret 2026).** Diaudit terhadap kode `PlaybackService.kt`: upgrade dari
+1.4.1 → 1.10.0 **tidak butuh perubahan kode** karena Scrola hanya memakai API inti yang stabil
+(`ExoPlayer.Builder`, `DefaultLoadControl`, `AudioAttributes`, `MediaSession.Builder`,
+`MediaSessionService`, `Player.Listener`, `MediaItem`/`MediaMetadata.Builder`, `setWakeMode`). Yang
+perlu dipastikan hanya syarat build: **minSdk ≥ 23** (Scrola sudah 23) dan **compileSdk ≥ 34 + Java
+17** (Scrola sudah compileSdk 35). Breaking changes 1.5→1.10 yang ADA tidak menyentuh Scrola:
+MediaSessionService kini `LifecycleService` (mundur-kompatibel), method wajib baru hanya untuk
+`MediaNotification.Provider` KUSTOM (Scrola pakai default), dan `FrameExtractor` pindah modul (fitur
+video, tak dipakai). Manfaat langsung: perbaikan bug gapless/offload, audio focus & routing, float
+PCM, plus opsi efisiensi baru `experimentalSetDynamicSchedulingEnabled()`. Belum divalidasi build di
+sesi ini (tak ada Android SDK) — jalankan `gradle build` + uji perangkat setelah menaikkan versi.
 
 **Catatan jujur soal `mp3agic`** (dipakai `Mp3MetadataPlugin.kt` untuk baca/tulis tag ID3):
 Android tidak punya API bawaan untuk MENULIS tag ID3 (`MediaMetadataRetriever` cuma bisa baca),

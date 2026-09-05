@@ -1,17 +1,16 @@
-import { useI18n } from '../lib/i18nContext';
-import { LOCALES } from '../lib/i18n';
-import { errTextFor } from '../lib/appError';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { App as CapApp } from '@capacitor/app';
 import { NowPlaying, type NowPlayingState } from '../hooks/useNowPlaying';
 import { clearSession } from '../lib/secureStore';
 import { Diagnostics } from '../lib/diagnostics';
-import { getExternalScrobbleEnabled, setExternalScrobbleEnabled, getIgnoredSources, toggleIgnoredSource } from '../lib/preferences';
+import { getExternalScrobbleEnabled, setExternalScrobbleEnabled } from '../lib/preferences';
 import { getAccountStats, getQueueStatus } from '../lib/db/queries';
 import { flushQueue } from '../lib/scrobbleEngine';
-import { sourceLabel, isLikelyMusicSource } from '../lib/sourceLabels';
-import { buildBackupJson, restoreFromJson, type RestoreSummary } from '../lib/backupService';
-import { SharePlugin } from '../lib/share';
+import { sourceLabel } from '../lib/sourceLabels';
+import { loadCorrections, deleteCorrection, clearCorrections } from '../lib/correctionsStore';
+import type { CorrectionRule } from '../lib/corrections';
+import { loadBlockedSources, toggleSourceBlocked } from '../lib/blocklistStore';
+import { isSourceBlocked } from '../lib/blocklist';
 
 export default function SettingsScreen({
   username,
@@ -22,12 +21,10 @@ export default function SettingsScreen({
   current: NowPlayingState | null;
   onLoggedOut: () => void;
 }) {
-  const { t, tp, n, locale, setLocale } = useI18n();
   const [notifGranted, setNotifGranted] = useState<boolean | null>(null);
   const [crashLog, setCrashLog] = useState<string | null>(null);
   const [showCrashLog, setShowCrashLog] = useState(false);
   const [externalOn, setExternalOn] = useState(true);
-  const [ignoredSources, setIgnoredSources] = useState<string[]>([]);
   const [accountStats, setAccountStats] = useState<{ totalScrobbles: number; firstYear: number | null } | null>(null);
   const [queueStatus, setQueueStatus] = useState<{
     pending: number;
@@ -37,6 +34,8 @@ export default function SettingsScreen({
   } | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [eventLog, setEventLog] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<CorrectionRule[]>([]);
+  const [blockedSources, setBlockedSources] = useState<string[]>([]);
   const [listenerDiag, setListenerDiag] = useState<{
     granted: boolean;
     connected: boolean;
@@ -51,13 +50,17 @@ export default function SettingsScreen({
   } | null>(null);
 
   useEffect(() => {
+    void loadCorrections().then(setCorrections);
+    void loadBlockedSources().then(setBlockedSources);
+  }, []);
+
+  useEffect(() => {
     Diagnostics.getLastCrashLog()
       .then(({ log }) => setCrashLog(log))
       .catch(() => {
         // Plugin tidak tersedia (mis. preview web) — abaikan, fitur ini memang native-only.
       });
     getExternalScrobbleEnabled().then(setExternalOn).catch(() => {});
-    getIgnoredSources().then(setIgnoredSources).catch(() => {});
     refreshQueueStatus();
     refreshListenerDiag();
     getAccountStats()
@@ -117,7 +120,7 @@ export default function SettingsScreen({
         // TIDAK boleh tersangkut "Memeriksa…" selamanya. Set status kosong eksplisit supaya UI
         // keluar dari keadaan loading dan menampilkan bahwa antreannya tidak terbaca.
         console.warn('Gagal membaca status antrean:', e);
-        setQueueStatus({ pending: 0, lastError: t('settings.queue.unreadable'), maxAttempts: 0, oldestTimestamp: null });
+        setQueueStatus({ pending: 0, lastError: 'Antrean tidak terbaca', maxAttempts: 0, oldestTimestamp: null });
       });
   }
 
@@ -149,82 +152,12 @@ export default function SettingsScreen({
     });
   }
 
-  // Bisukan/aktifkan scrobble dari satu sumber (mis. app YouTube utama = mayoritas video).
-  // Optimistic dengan rollback; sumber di daftar-abaikan tak akan discrobble (shouldScrobbleSource).
-  function handleToggleIgnore(pkg: string) {
-    const wasIgnored = ignoredSources.includes(pkg);
-    setIgnoredSources((cur) => (wasIgnored ? cur.filter((p) => p !== pkg) : [...cur, pkg]));
-    toggleIgnoredSource(pkg)
-      .then(setIgnoredSources)
-      .catch((e) => {
-        console.warn('Gagal menyimpan sumber yang dibisukan:', e);
-        setIgnoredSources((cur) => (wasIgnored ? [...cur, pkg] : cur.filter((p) => p !== pkg)));
-      });
-  }
-
   const externalNowPlaying =
     current && current.packageName !== 'com.scrola.app' ? current : null;
 
-  // ===== Cadangan data =====
-  const [backupBusy, setBackupBusy] = useState<null | 'export' | 'import'>(null);
-  const [backupMsg, setBackupMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
-  const importInputRef = useRef<HTMLInputElement | null>(null);
-
-  async function handleExportBackup() {
-    if (backupBusy) return;
-    setBackupBusy('export');
-    setBackupMsg(null);
-    try {
-      const json = await buildBackupJson();
-      const stamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-      await SharePlugin.shareFile({
-        content: json,
-        filename: `scrola-backup-${stamp}.json`,
-        mimeType: 'application/json',
-        title: t('settings.backup.shareTitle'),
-      });
-      setBackupMsg({ kind: 'ok', text: t('settings.backup.exportOk') });
-    } catch (e) {
-      console.warn('Gagal membuat cadangan:', e);
-      setBackupMsg({ kind: 'err', text: t('settings.backup.exportErr') });
-    } finally {
-      setBackupBusy(null);
-    }
-  }
-
-  function summaryText(s: RestoreSummary): string {
-    const parts = [
-      t('settings.restore.notes', { count: s.notesRestored }),
-      t('settings.restore.favorites', { count: s.favoritesRestored }),
-      t('settings.restore.inserted', { count: s.inserted }),
-    ];
-    if (s.correctionsRestored > 0) parts.push(t('settings.restore.corrections', { count: s.correctionsRestored }));
-    if (s.conflicts > 0) parts.push(t('settings.restore.conflicts', { count: s.conflicts }));
-    return parts.join(' · ');
-  }
-
-  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // reset supaya memilih file yang sama lagi tetap memicu onChange
-    if (!file || backupBusy) return;
-    setBackupBusy('import');
-    setBackupMsg(null);
-    try {
-      const text = await file.text();
-      const summary = await restoreFromJson(text);
-      setBackupMsg({ kind: 'ok', text: t('settings.backup.restored', { summary: summaryText(summary) }) });
-    } catch (err) {
-      // parseBackup melempar AppError berkunci untuk file rusak/bukan-backup → diterjemahkan di sini.
-      console.warn('Restore gagal:', err);
-      setBackupMsg({ kind: 'err', text: errTextFor(err, locale, 'settings.backup.readErr') });
-    } finally {
-      setBackupBusy(null);
-    }
-  }
-
   return (
     <div className="min-h-screen px-5 pt-8 pb-24">
-      <h1 className="font-display text-2xl font-semibold text-paper mb-6">{t('settings.title')}</h1>
+      <h1 className="font-display text-2xl font-semibold text-paper mb-6">Pengaturan</h1>
 
       {/* ===== Backstage Pass — kartu akun bergaya tiket ===== */}
       <div
@@ -238,24 +171,24 @@ export default function SettingsScreen({
               Backstage Pass
             </p>
             {accountStats?.firstYear && (
-              <p className="font-mono text-[10px] text-muted">{t('settings.pass.since', { year: accountStats.firstYear })}</p>
+              <p className="font-mono text-[10px] text-muted">sejak {accountStats.firstYear}</p>
             )}
           </div>
           <h2 className="font-display text-[26px] font-semibold text-paper mt-2.5 truncate">
             {username}
           </h2>
           <p className="text-[13px] text-muted mt-1">
-            {t('settings.pass.connected')}
+            Terhubung ke Last.fm
             {accountStats != null &&
               accountStats.totalScrobbles > 0 &&
-              ` · ${tp('settings.pass.scrobbles', accountStats.totalScrobbles, { count: n(accountStats.totalScrobbles) })}`}
+              ` · ${accountStats.totalScrobbles.toLocaleString('id-ID')} scrobble`}
           </p>
           <div className="border-t border-dashed border-paper/15 mt-4 pt-3 flex justify-between items-center gap-3">
             <span className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase truncate">
               last.fm/user/{username}
             </span>
             <button onClick={handleLogout} className="text-coral text-[13px] font-medium shrink-0">
-              {t('settings.pass.disconnect')}
+              Putuskan
             </button>
           </div>
         </div>
@@ -264,20 +197,20 @@ export default function SettingsScreen({
       {/* ===== Deteksi Musik ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-          {t('settings.detect.section')}
+          Deteksi Musik
         </p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4">
           <div className="flex items-center justify-between gap-3">
             <div className="pr-2">
-              <p className="text-paper font-medium text-[15px]">{t('np.notifAccess')}</p>
-              <p className="text-muted text-xs mt-0.5">{t('settings.notifAccess.sub')}</p>
+              <p className="text-paper font-medium text-[15px]">Akses notifikasi</p>
+              <p className="text-muted text-xs mt-0.5">Untuk membaca Spotify, YT Music, dll.</p>
             </div>
             <span
               className={`shrink-0 text-xs font-mono px-2 py-1 rounded ${
                 notifGranted ? 'bg-amber/15 text-amber' : 'bg-coral/15 text-coral'
               }`}
             >
-              {notifGranted === null ? '...' : notifGranted ? t('settings.status.active') : t('settings.status.inactive')}
+              {notifGranted === null ? '...' : notifGranted ? 'Aktif' : 'Nonaktif'}
             </span>
           </div>
 
@@ -288,45 +221,23 @@ export default function SettingsScreen({
               }}
               className="mt-3 w-full bg-amber text-ink font-body font-semibold rounded-md py-2.5 text-sm"
             >
-              {t('settings.openNotifSettings')}
+              Buka Pengaturan Notifikasi
             </button>
           )}
-
-          {/* Pemilih bahasa (i18n) */}
-          <div className="pt-3.5 mt-3.5 border-t border-white/5">
-            <p className="text-paper font-medium text-[15px]">{t('settings.language')}</p>
-            <p className="text-muted text-[13px] mt-0.5 mb-2.5">{t('settings.language.hint')}</p>
-            <div className="flex flex-wrap gap-2">
-              {LOCALES.map((l) => (
-                <button
-                  key={l}
-                  onClick={() => setLocale(l)}
-                  aria-pressed={locale === l}
-                  className={`font-mono text-[12px] rounded-full px-3.5 py-1.5 border transition-colors ${
-                    locale === l
-                      ? 'text-amber bg-amber/10 border-amber/40'
-                      : 'text-muted bg-transparent border-white/15'
-                  }`}
-                >
-                  {t(`lang.${l}`)}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* Toggle: Scrobble dari app lain */}
           <div className="flex items-center justify-between gap-3 pt-3.5 mt-3.5 border-t border-white/5">
             <div className="pr-2">
-              <p className="text-paper font-medium text-[15px]">{t('settings.external.title')}</p>
+              <p className="text-paper font-medium text-[15px]">Scrobble dari app lain</p>
               <p className="text-muted text-xs mt-0.5">
-                {t('settings.external.sub')}
+                Matikan untuk mencatat player internal saja
               </p>
             </div>
             <button
               onClick={handleToggleExternal}
               role="switch"
               aria-checked={externalOn}
-              aria-label={t('settings.external.title')}
+              aria-label="Scrobble dari app lain"
               className="relative w-11 h-[26px] rounded-full shrink-0"
               style={{
                 background: externalOn ? '#D6A756' : 'rgba(239,237,224,0.15)',
@@ -359,13 +270,15 @@ export default function SettingsScreen({
                 }`}
               />
               <p className="text-muted text-xs leading-relaxed min-w-0 truncate">
-                {externalNowPlaying
-                  ? t('settings.detectingFrom', {
-                      source: sourceLabel(externalNowPlaying.packageName),
-                      artist: externalNowPlaying.artist,
-                      title: externalNowPlaying.title,
-                    })
-                  : t('settings.noOtherDetected')}
+                {externalNowPlaying ? (
+                  <>
+                    Mendeteksi dari{' '}
+                    <span className="text-paper">{sourceLabel(externalNowPlaying.packageName)}</span>{' '}
+                    — {externalNowPlaying.artist}, {externalNowPlaying.title}
+                  </>
+                ) : (
+                  'Belum ada app musik lain yang terdeteksi memutar.'
+                )}
               </p>
             </div>
           )}
@@ -375,94 +288,101 @@ export default function SettingsScreen({
       {/* ===== Diagnosis Deteksi Musik ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-          {t('settings.diag.section')}
+          Diagnosis Deteksi Musik
         </p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4">
           {listenerDiag === null ? (
-            <p className="text-muted text-sm">{t('settings.checking')}</p>
+            <p className="text-muted text-sm">Memeriksa…</p>
           ) : (
             <>
               {/* Tiga lapis, ditampilkan berurutan — lapis pertama yang gagal adalah akar
                   masalahnya, jadi pengguna tidak perlu menebak harus memperbaiki yang mana. */}
-              <DiagRow ok={listenerDiag.granted} label={t('settings.diag.granted')} />
-              <DiagRow ok={listenerDiag.connected} label={t('settings.diag.connected')} />
+              <DiagRow ok={listenerDiag.granted} label="Izin akses notifikasi" />
+              <DiagRow ok={listenerDiag.connected} label="Layanan pemantau hidup" />
               <DiagRow
                 ok={listenerDiag.totalEvents > 0}
-                label={t('settings.diag.events', { count: listenerDiag.totalEvents })}
+                label={`Kabar dari app musik (${listenerDiag.totalEvents}×)`}
               />
 
               {listenerDiag.lastEventPackage && (
                 <p className="font-mono text-[11px] text-muted mt-2.5 truncate">
-                  {t('settings.diag.last', { source: sourceLabel(listenerDiag.lastEventPackage) })}
+                  terakhir: {sourceLabel(listenerDiag.lastEventPackage)}
                   {listenerDiag.lastEventAtMs > 0 &&
-                    ` · ${t('settings.diag.secondsAgo', { secs: Math.round((Date.now() - listenerDiag.lastEventAtMs) / 1000) })}`}
+                    ` · ${Math.round((Date.now() - listenerDiag.lastEventAtMs) / 1000)} detik lalu`}
                 </p>
               )}
 
-              {(() => {
-                // Saring paket non-musik jelas (keyboard/launcher/systemui) dari daftar tampil —
-                // mis. com.samsung.android.honeyboard yang punya MediaSession tapi bukan pemutar.
-                const musicSources = (listenerDiag.detectedPackages ?? []).filter(isLikelyMusicSource);
-                if (musicSources.length === 0) return null;
-                return (
-                  <div className="mt-3">
-                    <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase mb-1.5">
-                      {t('settings.diag.sourcesDetected', { count: musicSources.length })}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {musicSources.map((pkg) => {
-                        const muted = ignoredSources.includes(pkg);
-                        return (
-                          <button
-                            key={pkg}
-                            onClick={() => handleToggleIgnore(pkg)}
-                            aria-pressed={!muted}
-                            className={`font-mono text-[11px] rounded-full px-2.5 py-1 border transition-colors active:scale-[0.98] ${
-                              muted
-                                ? 'text-muted bg-transparent border-white/15 line-through'
-                                : 'text-amber bg-amber/10 border-amber/25'
-                            }`}
-                          >
-                            {muted ? '🔇 ' : ''}{sourceLabel(pkg)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="text-muted text-[11px] mt-2 leading-relaxed">
-                      {t('settings.diag.sourcesHint')}
-                    </p>
+              {listenerDiag.detectedPackages && listenerDiag.detectedPackages.length > 0 && (
+                <div className="mt-3">
+                  <p className="font-mono text-[10px] tracking-[0.15em] text-muted uppercase mb-1.5">
+                    Sumber terdeteksi ({listenerDiag.detectedPackages.length})
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {listenerDiag.detectedPackages.map((pkg) => {
+                      const blocked = isSourceBlocked(pkg, blockedSources);
+                      return (
+                        <button
+                          key={pkg}
+                          onClick={() => {
+                            void toggleSourceBlocked(pkg).then(setBlockedSources);
+                          }}
+                          className={
+                            'font-mono text-[11px] rounded-full px-2.5 py-1 border transition-colors ' +
+                            (blocked
+                              ? 'text-muted bg-transparent border-white/10 line-through'
+                              : 'text-amber bg-amber/10 border-amber/25')
+                          }
+                          aria-label={
+                            (blocked ? 'Buka blokir ' : 'Blokir ') + sourceLabel(pkg)
+                          }
+                        >
+                          {sourceLabel(pkg)}
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })()}
+                  <p className="text-muted text-[11px] mt-2 leading-relaxed">
+                    Ketuk sumber untuk memblokirnya — mis. app podcast/video yang bukan musik. Yang
+                    dicoret tidak akan discrobble.
+                  </p>
+                </div>
+              )}
 
               {/* Saran perbaikan SPESIFIK untuk lapis pertama yang gagal */}
               {!listenerDiag.granted && (
                 <p className="text-coral text-xs mt-3 leading-relaxed">
-                  {t('settings.diag.fixGranted', { access: t('np.notifAccess') })}
+                  Aktifkan <span className="text-paper">Akses notifikasi</span> di atas.
                 </p>
               )}
 
               {listenerDiag.granted && !listenerDiag.connected && (
                 <div className="mt-3 pt-3 border-t border-white/5">
                   <p className="text-coral text-xs leading-relaxed mb-2">
-                    {t('settings.diag.notConnected.title')}
+                    Izin tercentang tapi layanan tidak hidup. Dua penyebab tersering:
                   </p>
                   {listenerDiag.androidSdk >= 33 && (
                     <p className="text-muted text-xs leading-relaxed mb-2">
-                      {t('settings.diag.notConnected.sdk')}
+                      <span className="text-paper">1. Android {'>'}= 13 memblokir aplikasi
+                      sideload.</span> Buka Setelan → Aplikasi → Scrola → menu 3 titik →{' '}
+                      <span className="text-paper">Izinkan setelan yang dibatasi</span>, lalu
+                      aktifkan ulang akses notifikasi.
                     </p>
                   )}
                   <p className="text-muted text-xs leading-relaxed">
-                    {t('settings.diag.notConnected.bg', {
-                      manufacturer: listenerDiag.manufacturer || t('settings.diag.device'),
-                    })}
+                    <span className="text-paper">
+                      2. {listenerDiag.manufacturer || 'Perangkat'} membatasi aplikasi latar.
+                    </span>{' '}
+                    Cari <span className="text-paper">"Aplikasi tak pernah tidur"</span> di setelan
+                    sistem dan tambahkan Scrola ke daftarnya.
                   </p>
                 </div>
               )}
 
               {listenerDiag.connected && listenerDiag.totalEvents === 0 && (
                 <p className="text-muted text-xs mt-3 leading-relaxed">
-                  {t('settings.diag.noReports')}
+                  Layanan hidup tapi belum ada aplikasi musik yang melapor. Coba putar lagu, lalu
+                  buka layar ini lagi. Kalau tetap nol, aplikasi musiknya mungkin tidak melaporkan
+                  MediaSession ke sistem.
                 </p>
               )}
 
@@ -470,7 +390,7 @@ export default function SettingsScreen({
                 onClick={refreshListenerDiag}
                 className="mt-3 text-amber text-xs font-mono underline underline-offset-4"
               >
-                {t('settings.diag.recheck')}
+                periksa ulang
               </button>
             </>
           )}
@@ -480,24 +400,24 @@ export default function SettingsScreen({
       {/* ===== Antrean Scrobble — panel diagnosis ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-          {t('settings.queue.section')}
+          Antrean Scrobble
         </p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4">
           <div className="flex items-center justify-between gap-3">
             <div className="pr-2 min-w-0">
               <p className="text-paper font-medium text-[15px]">
                 {queueStatus === null
-                  ? t('settings.checking')
+                  ? 'Memeriksa…'
                   : queueStatus.pending === 0
-                  ? t('settings.queue.empty')
-                  : tp('settings.queue.waiting', queueStatus.pending)}
+                  ? 'Antrean kosong'
+                  : `${queueStatus.pending} lagu menunggu dikirim`}
               </p>
               <p className="text-muted text-xs mt-0.5 leading-relaxed">
                 {queueStatus === null
                   ? ''
                   : queueStatus.pending === 0
-                  ? t('settings.queue.empty.sub')
-                  : t('settings.queue.waiting.sub', { count: queueStatus.maxAttempts })}
+                  ? 'Semua lagu yang memenuhi syarat sudah terkirim ke Last.fm.'
+                  : `Sudah dicoba ${queueStatus.maxAttempts}×. Lagu tetap tersimpan dan akan dikirim ulang.`}
               </p>
             </div>
             {queueStatus !== null && queueStatus.pending > 0 && (
@@ -506,7 +426,7 @@ export default function SettingsScreen({
                 disabled={retrying}
                 className="shrink-0 bg-amber text-ink text-xs font-semibold rounded-md py-2 px-3 disabled:opacity-50"
               >
-                {retrying ? '...' : t('settings.queue.send')}
+                {retrying ? '...' : 'Kirim'}
               </button>
             )}
           </div>
@@ -516,7 +436,7 @@ export default function SettingsScreen({
           {queueStatus?.lastError && (
             <div className="mt-3 pt-3 border-t border-white/5">
               <p className="font-mono text-[10px] tracking-[0.1em] text-coral uppercase mb-1">
-                {t('settings.queue.lastFail')}
+                Kegagalan terakhir
               </p>
               <p className="text-muted text-xs font-mono break-words leading-relaxed">
                 {queueStatus.lastError}
@@ -529,18 +449,19 @@ export default function SettingsScreen({
       {/* ===== Log Peristiwa (diagnosis mendalam) ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-          {t('settings.log.section')}
+          Log Peristiwa Scrobble
         </p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4">
           <p className="text-muted text-xs mb-3 leading-relaxed">
-            {t('settings.log.desc')}
+            Jejak mentah apa yang terjadi saat lagu memenuhi syarat — untuk menemukan di titik mana
+            pencatatan berhenti. Putar lagu sampai lewat separuh, lalu tekan muat.
           </p>
           <div className="flex gap-2 mb-3">
             <button
               onClick={refreshEventLog}
               className="bg-amber text-ink text-xs font-semibold rounded-md py-2 px-3"
             >
-              {t('settings.log.load')}
+              Muat log
             </button>
             <button
               onClick={() => {
@@ -548,63 +469,81 @@ export default function SettingsScreen({
               }}
               className="border border-white/10 text-muted text-xs rounded-md py-2 px-3"
             >
-              {t('settings.log.clear')}
+              Bersihkan
             </button>
           </div>
           {eventLog !== null && (
             <pre className="bg-ink rounded-lg p-3 text-[11px] text-muted font-mono whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
-              {eventLog || t('settings.log.empty')}
+              {eventLog || '(kosong — belum ada peristiwa terekam)'}
             </pre>
           )}
         </div>
       </section>
 
-      {/* ===== Cadangan Data ===== */}
+      {/* ===== Koreksi Metadata (belajar dari edit Riwayat) ===== */}
       <section className="mb-6">
-        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">{t('settings.backup.section')}</p>
-        <div className="bg-surface rounded-[10px] py-4 px-4">
-          <p className="text-paper text-sm mb-1">{t('settings.backup.title')}</p>
-          <p className="text-muted text-xs mb-3.5 leading-relaxed">
-            {t('settings.backup.desc')}
+        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
+          Koreksi Metadata
+        </p>
+        <div className="bg-surface rounded-[10px] py-3.5 px-4">
+          <p className="text-muted text-xs mb-3 leading-relaxed">
+            Saat kamu memperbaiki lagu di Riwayat, Scrola mengingat koreksinya dan menerapkannya
+            otomatis ke scrobble serupa berikutnya. Aturan yang tersimpan bisa kamu hapus di sini.
           </p>
-          <div className="flex gap-2.5">
-            <button
-              onClick={handleExportBackup}
-              disabled={backupBusy !== null}
-              className="flex-1 border border-amber/40 text-amber font-body font-semibold text-sm rounded-lg py-3 active:scale-[0.99] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {backupBusy === 'export' ? t('ticket.preparing') : t('settings.backup.create')}
-            </button>
-            <button
-              onClick={() => importInputRef.current?.click()}
-              disabled={backupBusy !== null}
-              className="flex-1 border border-white/15 text-paper font-body font-semibold text-sm rounded-lg py-3 active:scale-[0.99] transition-transform disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {backupBusy === 'import' ? t('settings.backup.restoring') : t('settings.backup.restore')}
-            </button>
-          </div>
-          {/* input file tersembunyi — dibaca langsung di WebView (FileReader), tanpa plugin native. */}
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            onChange={handleImportFile}
-            className="hidden"
-          />
-          {backupMsg && (
-            <p
-              className={`text-xs mt-3 leading-relaxed ${backupMsg.kind === 'ok' ? 'text-amber' : 'text-red-300'}`}
-              role="status"
-            >
-              {backupMsg.text}
-            </p>
+
+          {corrections.length === 0 ? (
+            <p className="text-muted text-[13px]">Belum ada koreksi yang dipelajari.</p>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {corrections.map((r) => (
+                  <div
+                    key={`${r.fromArtist}\u0000${r.fromTrack}`}
+                    className="flex items-center justify-between gap-3 bg-ink rounded-lg py-2.5 px-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[13px] text-paper truncate">
+                        {r.toArtist} — {r.toTrack}
+                      </p>
+                      <p className="font-mono text-[10px] text-muted truncate">
+                        dari: {r.fromArtist} · {r.fromTrack}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        void deleteCorrection(r.fromArtist, r.fromTrack).then(() =>
+                          setCorrections((prev) =>
+                            prev.filter(
+                              (x) =>
+                                !(x.fromArtist === r.fromArtist && x.fromTrack === r.fromTrack)
+                            )
+                          )
+                        );
+                      }}
+                      className="shrink-0 text-coral text-xs"
+                      aria-label={`Hapus koreksi untuk ${r.fromTrack}`}
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  void clearCorrections().then(() => setCorrections([]));
+                }}
+                className="mt-3 border border-white/10 text-muted text-xs rounded-md py-2 px-3"
+              >
+                Hapus semua ({corrections.length})
+              </button>
+            </>
           )}
         </div>
       </section>
 
       {/* ===== Tentang ===== */}
       <section className="mb-6">
-        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">{t('settings.about.section')}</p>
+        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">Tentang</p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4 flex justify-between items-center">
           <div>
             <p className="text-paper text-sm">Scrola 0.1.0</p>
@@ -618,19 +557,20 @@ export default function SettingsScreen({
       {crashLog && (
         <section>
           <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-            {t('settings.crash.section')}
+            Diagnostik
           </p>
           <div className="bg-surface rounded-[10px] py-3.5 px-4">
-            <p className="text-paper text-sm">{t('settings.crash.title')}</p>
+            <p className="text-paper text-sm">Laporan kendala terakhir</p>
             <p className="text-muted text-xs mt-0.5 mb-3">
-              {t('settings.crash.desc')}
+              Scrola sempat mengalami kendala. Kamu bisa melihat detail teknisnya dan
+              mengirimkannya untuk membantu perbaikan.
             </p>
             <div className="flex gap-4">
               <button
                 onClick={() => setShowCrashLog((v) => !v)}
                 className="text-amber text-sm font-medium"
               >
-                {showCrashLog ? t('settings.crash.hide') : t('settings.crash.show')}
+                {showCrashLog ? 'Sembunyikan' : 'Lihat Detail'}
               </button>
               <button
                 onClick={() => {
@@ -643,7 +583,7 @@ export default function SettingsScreen({
                 }}
                 className="text-coral text-sm font-medium"
               >
-                {t('settings.crash.delete')}
+                Hapus
               </button>
             </div>
             {showCrashLog && (

@@ -3,15 +3,10 @@ import { Browser } from '@capacitor/browser';
 import { App as CapApp } from '@capacitor/app';
 import { getToken, getAuthUrl, getSession, isApiKeyMissing, LastfmApiError } from '../lib/lastfm';
 import { saveSession } from '../lib/secureStore';
-import { useI18n } from '../lib/i18nContext';
-import type { ErrDescriptor } from '../lib/appError';
 
 export default function LoginScreen({ onAuthed }: { onAuthed: (username: string) => void }) {
-  const { t } = useI18n();
   const [status, setStatus] = useState<'idle' | 'waiting' | 'error'>('idle');
-  // Simpan error sebagai deskriptor {key, params}, BUKAN teks jadi — diterjemahkan saat render
-  // supaya ganti bahasa saat pesan tampil pun ikut berubah.
-  const [errDesc, setErrDesc] = useState<ErrDescriptor | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
   // Nilai konstan sepanjang umur app (di-inject saat build) — cukup dihitung sekali.
   const apiKeyMissing = isApiKeyMissing();
   // Animasi keluar: tiket hero "terbang" saat auth sukses, BARU onAuthed dipanggil setelah
@@ -41,7 +36,7 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
       const token = pendingTokenRef.current;
       if (!token) {
         setStatus('error');
-        setErrDesc({ key: 'login.error.noSession' });
+        setErrorMsg('Sesi otorisasi tidak ditemukan. Coba tekan Hubungkan lagi.');
         return;
       }
       await exchangeToken(token);
@@ -71,25 +66,32 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
       if (e instanceof LastfmApiError) {
         switch (e.code) {
           case 13: // Invalid method signature
-            setErrDesc({ key: 'login.error.sig' });
+            setErrorMsg(
+              'Tanda tangan permintaan ditolak Last.fm. Biasanya berarti API SECRET salah ' +
+                '(tertukar dengan API key, atau belum diperbarui setelah dibuat ulang). Periksa ' +
+                'kembali kredensial lalu build ulang.'
+            );
             break;
           case 10: // Invalid API key
-            setErrDesc({ key: 'login.error.apiKey' });
+            setErrorMsg('API key tidak dikenali Last.fm. Periksa kembali nilainya lalu build ulang.');
             break;
           case 14: // Token not authorized
-            setErrDesc({ key: 'login.error.notAuthorized' });
+            setErrorMsg(
+              'Otorisasi belum selesai. Tekan "Hubungkan" lagi, lalu pastikan menekan tombol ' +
+                'Allow/Yes di halaman Last.fm sebelum kembali ke sini.'
+            );
             break;
           case 4:
           case 15: // Invalid / expired token
-            setErrDesc({ key: 'login.error.expired' });
+            setErrorMsg('Sesi otorisasi kedaluwarsa. Tekan "Hubungkan" lagi untuk mengulang.');
             break;
           default:
-            setErrDesc({ key: 'login.error.rejected', params: { code: e.code, message: e.message } });
+            setErrorMsg(`Last.fm menolak permintaan (kode ${e.code}): ${e.message}`);
         }
       } else {
-        // Sebab teknis (jaringan/JSON) dicatat ke console; ke pengguna cukup pesan bersih terlokalkan.
-        console.warn('Gagal menyelesaikan otorisasi:', e);
-        setErrDesc({ key: 'login.error.contactFail' });
+        setErrorMsg(
+          `Gagal menyelesaikan otorisasi: ${(e as Error)?.message ?? 'kesalahan tidak diketahui'}`
+        );
       }
     }
   }
@@ -117,10 +119,11 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
       // bukan JSON, blokir jaringan) tampak sama kalau pesannya digeneralisasi, dan pengguna
       // akan sia-sia memeriksa koneksinya. Tampilkan sebab aslinya.
       if (e instanceof LastfmApiError) {
-        setErrDesc({ key: 'login.error.rejected', params: { code: e.code, message: e.message } });
+        setErrorMsg(`Last.fm menolak permintaan (kode ${e.code}): ${e.message}`);
       } else {
-        console.warn('Gagal menghubungi Last.fm:', e);
-        setErrDesc({ key: 'login.error.network' });
+        setErrorMsg(
+          `${(e as Error)?.message ?? 'Gagal menghubungi Last.fm'}. Periksa koneksi internet bila berulang.`
+        );
       }
     }
   }
@@ -149,7 +152,7 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
         <div className="flex-1 pt-[26px] px-6 pb-[26px]">
           <div className="flex justify-between items-baseline">
             <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase">Scrola</p>
-            <p className="font-mono text-[10px] text-muted">{t('login.ticketNo')}</p>
+            <p className="font-mono text-[10px] text-muted">TIKET №0001</p>
           </div>
           <h1 className="font-display text-[32px] leading-[1.2] font-semibold text-paper mt-3.5">
             Every song
@@ -158,14 +161,15 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
           </h1>
           <div className="border-t border-dashed border-paper/15 mt-5 pt-3.5">
             <p className="font-mono text-[10px] tracking-[0.1em] text-muted">
-              {t('login.tagline')}
+              ADMIT ONE · SEUMUR HIDUP · TANPA IKLAN
             </p>
           </div>
         </div>
       </div>
 
       <p className="text-muted text-sm leading-relaxed mb-7">
-        {t('login.intro')}
+        Hubungkan akun Last.fm untuk mulai mencatat setiap lagu yang kamu putar — dari Scrola
+        maupun aplikasi musik lain.
       </p>
 
       {/* Kalau app di-build TANPA API key (kesalahan paling umum saat build sendiri dari source),
@@ -173,9 +177,14 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
           dari Last.fm — beri tahu persis apa yang kurang dan ke mana harus melihat. */}
       {apiKeyMissing ? (
         <div className="border border-coral/40 bg-coral/5 rounded-lg p-4">
-          <p className="text-coral text-sm font-medium mb-1.5">{t('login.apiKeyMissing.title')}</p>
+          <p className="text-coral text-sm font-medium mb-1.5">API key Last.fm belum dipasang</p>
           <p className="text-muted text-xs leading-relaxed">
-            {t('login.apiKeyMissing.body')}
+            Aplikasi ini di-build tanpa kredensial Last.fm, jadi belum bisa terhubung. Kalau kamu
+            membangun Scrola dari kode sumber, ikuti panduan di{' '}
+            <span className="font-mono text-paper">docs/PANDUAN_API_KEY.md</span> — salin
+            <span className="font-mono text-paper"> .env.example</span> menjadi
+            <span className="font-mono text-paper"> .env.local</span>, isi kredensialmu, lalu build
+            ulang.
           </p>
         </div>
       ) : (
@@ -185,16 +194,16 @@ export default function LoginScreen({ onAuthed }: { onAuthed: (username: string)
           className="bg-amber text-ink font-body font-semibold text-base rounded-lg py-4 px-6
                      active:scale-[0.98] transition-transform disabled:opacity-60"
         >
-          {status === 'waiting' ? t('login.waiting') : t('login.connect')}
+          {status === 'waiting' ? 'Menunggu izin...' : 'Hubungkan ke Last.fm'}
         </button>
       )}
 
-      {status === 'error' && errDesc && (
-        <p className="text-coral text-sm mt-3 text-center">{t(errDesc.key, errDesc.params)}</p>
-      )}
+      {status === 'error' && <p className="text-coral text-sm mt-3 text-center">{errorMsg}</p>}
 
       <p className="text-muted text-xs mt-5 text-center leading-relaxed">
-        {status === 'waiting' ? t('login.hint.waiting') : t('login.hint.idle')}
+        {status === 'waiting'
+          ? 'Setelah menekan "Allow" di halaman Last.fm, tutup tab browser untuk kembali ke sini.'
+          : 'Kata sandimu tidak pernah disimpan — otorisasi langsung di last.fm.'}
       </p>
     </div>
   );

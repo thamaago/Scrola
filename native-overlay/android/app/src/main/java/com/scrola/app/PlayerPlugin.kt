@@ -1,14 +1,22 @@
 package com.scrola.app
 
+import android.Manifest
+import android.content.ContentUris
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
+import com.getcapacitor.JSArray
 import com.getcapacitor.JSObject
+import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
 import org.json.JSONObject
 
 /**
@@ -19,21 +27,18 @@ import org.json.JSONObject
  * READ_MEDIA_AUDIO/READ_EXTERNAL_STORAGE, karena kita hanya butuh akses ke file yang
  * dipilih user secara eksplisit lewat picker sistem, bukan memindai seluruh library.
  */
-@CapacitorPlugin(name = "Player")
+@CapacitorPlugin(
+    name = "Player",
+    permissions = [
+        Permission(strings = [Manifest.permission.READ_MEDIA_AUDIO], alias = "audio")
+    ]
+)
 class PlayerPlugin : Plugin() {
 
     companion object {
         private var instance: PlayerPlugin? = null
         private val mainHandler = Handler(Looper.getMainLooper())
         private var positionPollRunnable: Runnable? = null
-
-        // Interval poll adaptif. Saat playing tetap 1 dtk (perilaku lama, dipakai progress bar &
-        // eligibility). Saat pause/tak ada internal player, backoff supaya tak membangunkan CPU
-        // tiap detik sia-sia — mayoritas sesi hanya scrobble Spotify eksternal, PlaybackService
-        // sering null sepanjang app hidup.
-        private const val POLL_ACTIVE_MS = 1000L
-        private const val POLL_PAUSED_MS = 2000L
-        private const val POLL_IDLE_MS = 3000L
 
         fun emit(eventName: String, data: JSONObject?) {
             instance?.notifyListeners(eventName, data?.let { JSObject.fromJSONObject(it) } ?: JSObject())
@@ -47,33 +52,24 @@ class PlayerPlugin : Plugin() {
     }
 
     /**
-     * Poll posisi playback untuk dikirim ke JS (dipakai progress bar & eligibility check).
-     * Interval adaptif (lihat konstanta POLL_*): 1 dtk saat benar-benar playing, lebih lambat saat
-     * pause, paling lambat saat tak ada internal player sama sekali. Loop TIDAK pernah berhenti
-     * total selama plugin hidup — hanya melambat — supaya begitu playback lanjut, seek-bar pasti
-     * pulih tanpa perlu pemicu eksternal (menghindari risiko seek-bar freeze setelah resume).
-     * Dihentikan sepenuhnya hanya di handleOnDestroy().
+     * Poll posisi playback tiap 1 detik untuk dikirim ke JS (dipakai progress bar & eligibility
+     * check). Dihentikan di handleOnDestroy() — sebelumnya loop ini tidak pernah berhenti sama
+     * sekali selama proses app hidup, terus memakai CPU/baterai walau plugin/WebView sudah
+     * tidak dipakai lagi.
      */
-    private fun nextPollDelayMs(playing: Boolean, hasService: Boolean): Long = when {
-        playing -> POLL_ACTIVE_MS
-        hasService -> POLL_PAUSED_MS
-        else -> POLL_IDLE_MS
-    }
-
     private fun startPositionPolling() {
         positionPollRunnable = object : Runnable {
             override fun run() {
                 val service = PlaybackService.instance
-                val playing = service?.isPlaying() == true
                 if (service != null) {
                     val payload = JSONObject().apply {
                         put("positionMs", service.currentPositionMs())
                         put("durationMs", service.durationMs())
-                        put("isPlaying", playing)
+                        put("isPlaying", service.isPlaying())
                     }
                     emit("playerPositionChanged", payload)
                 }
-                mainHandler.postDelayed(this, nextPollDelayMs(playing, service != null))
+                mainHandler.postDelayed(this, 1000)
             }
         }
         mainHandler.post(positionPollRunnable!!)
@@ -136,21 +132,11 @@ class PlayerPlugin : Plugin() {
                 return
             }
             // Simpan izin akses jangka panjang agar tidak perlu pilih ulang tiap buka app.
-            // Ambil READ + (bila bisa) WRITE, supaya file yang diputar bisa LANGSUNG diedit tag-nya
-            // & disimpan lewat "edit tag lagu ini" tanpa memilih ulang. Write dibungkus terpisah:
-            // beberapa provider hanya memberi READ — dalam kasus itu edit tetap bisa dibaca, hanya
-            // penyimpanan yang akan gagal jelas dengan pesannya sendiri.
-            // Dibungkus try/catch di luar supaya SecurityException tak meng-crash / menggantungkan Promise.
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            } catch (_: Exception) {
-                context.contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
+            // Bisa throw SecurityException di beberapa document provider non-standar — dibungkus
+            // try/catch di luar supaya tidak meng-crash app / membuat Promise JS menggantung.
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
 
             val metadata = extractMetadataFromUri(uri.toString())
 
@@ -246,6 +232,51 @@ class PlayerPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun playQueue(call: PluginCall) {
+        val arr = call.getArray("items")
+        val startIndex = call.getInt("startIndex") ?: 0
+        val items = ArrayList<PlaybackService.QueueItem>()
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                items.add(
+                    PlaybackService.QueueItem(
+                        uri = o.optString("uri"),
+                        title = o.optString("title"),
+                        artist = o.optString("artist")
+                    )
+                )
+            }
+        }
+        mainHandler.post {
+            PlaybackService.instance?.playQueue(items, startIndex)
+            call.resolve()
+        }
+    }
+
+    @PluginMethod
+    fun skipNext(call: PluginCall) {
+        mainHandler.post { PlaybackService.instance?.skipNext(); call.resolve() }
+    }
+
+    @PluginMethod
+    fun skipPrev(call: PluginCall) {
+        mainHandler.post { PlaybackService.instance?.skipPrev(); call.resolve() }
+    }
+
+    @PluginMethod
+    fun skipToIndex(call: PluginCall) {
+        val index = call.getInt("index") ?: 0
+        mainHandler.post { PlaybackService.instance?.skipToIndex(index); call.resolve() }
+    }
+
+    @PluginMethod
+    fun setRepeatMode(call: PluginCall) {
+        val mode = call.getString("mode") ?: "off"
+        mainHandler.post { PlaybackService.instance?.setRepeatMode(mode); call.resolve() }
+    }
+
+    @PluginMethod
     fun seekTo(call: PluginCall) {
         val positionMs = call.getInt("positionMs") ?: return call.reject("positionMs wajib diisi")
         mainHandler.post {
@@ -263,6 +294,114 @@ class PlayerPlugin : Plugin() {
             result.put("durationMs", service?.durationMs() ?: 0)
             result.put("isPlaying", service?.isPlaying() ?: false)
             call.resolve(result)
+        }
+    }
+
+    /**
+     * Pindai pustaka musik lokal perangkat lewat MediaStore (pola Gramophone). Mengembalikan
+     * { granted: Boolean, tracks: [LibraryTrack…] } — field cocok dengan src/lib/musicLibrary.ts,
+     * lalu logika JS mengelompokkan/mengurutkannya. Izin READ_MEDIA_AUDIO hanya diminta di API 33+.
+     * Query berjalan di thread latar plugin Capacitor (bukan main), jadi aman untuk cursor besar.
+     */
+    /**
+     * Ambil album art SATU lagu (on-demand) sebagai data URI ter-downscale. Dipakai pemutar antrean
+     * untuk menampilkan sampul lagu yang sedang diputar — TANPA mem-base64 art seluruh pustaka saat
+     * scan (boros). Mengembalikan { art } ("" bila tak ada). Reuse extractMetadataFromUri.
+     */
+    @PluginMethod
+    fun getAlbumArt(call: PluginCall) {
+        val uri = call.getString("uri")
+        if (uri == null) {
+            call.reject("uri wajib diisi")
+            return
+        }
+        val res = JSObject()
+        try {
+            res.put("art", extractMetadataFromUri(uri).albumArtDataUri ?: "")
+        } catch (e: Exception) {
+            res.put("art", "")
+        }
+        call.resolve(res)
+    }
+
+    @PluginMethod
+    fun scanLibrary(call: PluginCall) {
+        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("audio") != PermissionState.GRANTED) {
+            requestPermissionForAlias("audio", call, "audioPermCallback")
+            return
+        }
+        doScanLibrary(call)
+    }
+
+    @PermissionCallback
+    private fun audioPermCallback(call: PluginCall) {
+        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("audio") != PermissionState.GRANTED) {
+            val res = JSObject()
+            res.put("granted", false)
+            res.put("tracks", JSArray())
+            call.resolve(res)
+            return
+        }
+        doScanLibrary(call)
+    }
+
+    private fun doScanLibrary(call: PluginCall) {
+        val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.TRACK,
+            MediaStore.Audio.Media.YEAR,
+            MediaStore.Audio.Media.DATE_ADDED
+        )
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+        val sortOrder = "${MediaStore.Audio.Media.ARTIST} ASC"
+        val tracks = JSArray()
+        try {
+            context.contentResolver
+                .query(collection, projection, selection, null, sortOrder)
+                ?.use { c ->
+                    val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                    val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                    val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                    val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                    val albumIdCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+                    val durCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                    val trackCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
+                    val yearCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
+                    val addedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                    while (c.moveToNext()) {
+                        val durMs = c.getLong(durCol)
+                        if (durMs < 5000) continue // lewati klip <5s (nada dering/notif yg lolos IS_MUSIC)
+                        val id = c.getLong(idCol)
+                        val uri = ContentUris.withAppendedId(collection, id)
+                        val rawTrack = c.getInt(trackCol)
+                        val trackNo = if (rawTrack > 0) rawTrack % 1000 else 0 // TRACK kadang disc*1000+track
+                        val o = JSObject()
+                        o.put("id", id.toString())
+                        o.put("uri", uri.toString())
+                        o.put("title", c.getString(titleCol) ?: "")
+                        o.put("artist", c.getString(artistCol) ?: "")
+                        o.put("album", c.getString(albumCol) ?: "")
+                        o.put("albumId", c.getLong(albumIdCol).toString())
+                        o.put("durationSec", (durMs / 1000L).toInt())
+                        if (trackNo > 0) o.put("trackNo", trackNo)
+                        val year = c.getInt(yearCol)
+                        if (year > 0) o.put("year", year)
+                        o.put("addedAt", c.getLong(addedCol)) // DATE_ADDED sudah dalam detik
+                        tracks.put(o)
+                    }
+                }
+            val res = JSObject()
+            res.put("granted", true)
+            res.put("tracks", tracks)
+            call.resolve(res)
+        } catch (e: Exception) {
+            call.reject("Gagal memindai pustaka: ${e.message}")
         }
     }
 }

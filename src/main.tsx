@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import { SplashScreen } from '@capacitor/splash-screen';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
-import { I18nProvider } from './lib/i18nContext';
 import './styles/index.css';
 import { initDb } from './lib/db/db';
 
@@ -20,9 +19,7 @@ initDb()
     ReactDOM.createRoot(rootEl).render(
       <React.StrictMode>
         <ErrorBoundary>
-          <I18nProvider>
-            <App />
-          </I18nProvider>
+          <App />
         </ErrorBoundary>
       </React.StrictMode>
     );

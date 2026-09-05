@@ -167,15 +167,15 @@ const SCROLA_DEPS = `
 ${MARKER}
     // Media3/ExoPlayer — player internal (PlaybackService sebagai MediaSessionService, supaya
     // sesinya ikut terbaca pipeline scrobble yang sama dengan Spotify/YT Music).
-    implementation "androidx.media3:media3-exoplayer:1.4.1"
-    implementation "androidx.media3:media3-session:1.4.1"
-    implementation "androidx.media3:media3-common:1.4.1"
+    implementation "androidx.media3:media3-exoplayer:1.10.0"
+    implementation "androidx.media3:media3-session:1.10.0"
+    implementation "androidx.media3:media3-common:1.10.0"
 
     // mp3agic — baca/tulis tag ID3 untuk editor metadata MP3.
     implementation "com.mpatric:mp3agic:0.9.1"
 
     // androidx.core — NotificationCompat, FileProvider (berbagi tiket sebagai gambar).
-    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.core:core-ktx:1.17.0"
     // === AKHIR SCROLA NATIVE DEPS ===
 `;
 
