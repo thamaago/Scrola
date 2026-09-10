@@ -1,4 +1,5 @@
 import SecureStore from './secureStore';
+import type { Locale } from './i18n';
 
 /**
  * preferences.ts
@@ -36,4 +37,20 @@ export async function getExternalScrobbleEnabled(): Promise<boolean> {
 export async function setExternalScrobbleEnabled(enabled: boolean): Promise<void> {
   externalScrobbleCache = enabled; // update cache dulu supaya UI & engine langsung konsisten
   await SecureStore.set({ key: KEY_EXTERNAL_SCROBBLE, value: enabled ? '1' : '0' });
+}
+
+const KEY_LOCALE = 'pref_locale';
+
+/** Bahasa tersimpan pengguna, atau null (belum pernah dipilih -> deteksi dari perangkat). */
+export async function getSavedLocale(): Promise<Locale | null> {
+  try {
+    const { value } = await SecureStore.get({ key: KEY_LOCALE });
+    return value ? (value as Locale) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setSavedLocale(locale: Locale): Promise<void> {
+  await SecureStore.set({ key: KEY_LOCALE, value: locale });
 }

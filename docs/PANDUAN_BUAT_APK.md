@@ -102,21 +102,38 @@ LASTFM_API_SECRET     Updated now
 
 # Bagian 4 — Bangun APK-nya (10 menit, sebagian besar menunggu)
 
+> ✨ **Build berjalan OTOMATIS.** Begitu kamu commit/upload kode (Bagian 2) dengan secret sudah
+> terpasang (Bagian 3), GitHub langsung mulai membangun APK — kamu **tidak perlu** menekan tombol
+> apa pun. Cukup lihat tab **Actions**.
+
 1. Di repo-mu, klik tab **Actions** (di atas).
-2. Kalau muncul tombol hijau **"I understand my workflows, go ahead and enable them"** → klik.
-3. Di menu kiri, klik **Build Android Debug APK**.
-4. Di kanan, klik tombol **Run workflow** → lalu tombol hijau **Run workflow** lagi.
-5. **Tunggu.** Akan muncul baris baru dengan lingkaran kuning berputar 🟡. Butuh sekitar
-   **5–10 menit** (build pertama paling lama).
-6. Kalau selesai dan berubah jadi **centang hijau ✅** → berhasil!
+2. Kalau muncul tombol hijau **"I understand my workflows, go ahead and enable them"** → klik
+   (hanya sekali, pertama kali). Setelah itu, commit berikutnya otomatis membangun.
+3. Kamu akan melihat baris **Build Android Debug APK** dengan lingkaran kuning berputar 🟡. Butuh
+   sekitar **5–10 menit** (build pertama paling lama).
+   - *(Kalau ingin memicu manual: menu kiri → **Build Android Debug APK** → **Run workflow**.)*
+4. Kalau selesai dan berubah jadi **centang hijau ✅** → berhasil!
 
 ### Ambil APK-nya
 
+**Cara A — paling mudah (tautan unduh langsung):**
+Setiap build hijau otomatis menaruh APK terbaru di halaman **Releases**. Buka:
+
+```
+https://github.com/<username-mu>/scrola/releases/latest
+```
+
+Di bagian **Assets**, klik file `app-debug.apk` → langsung terunduh (tanpa ZIP, tanpa menggali).
+Tautan ini **selalu menunjuk APK terbaru**, jadi bisa kamu simpan/bagikan.
+
+**Cara B — dari Actions (kalau perlu build tertentu):**
 1. Klik baris build yang sudah hijau tadi.
 2. Scroll ke bawah, ada bagian **Artifacts**.
 3. Klik **scrola-debug-apk** → file ZIP terunduh.
 4. **Ekstrak ZIP itu** → di dalamnya ada file `app-debug.apk`.
-5. **Kirim file APK itu ke HP-mu** (lewat WhatsApp ke diri sendiri, Google Drive, atau kabel USB).
+
+**Kirim file APK ke HP-mu** (lewat WhatsApp ke diri sendiri, Google Drive, atau kabel USB), lalu
+lanjut ke Bagian 5.
 
 ---
 

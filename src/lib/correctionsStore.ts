@@ -1,5 +1,5 @@
 import SecureStore from './secureStore';
-import { upsertRule, removeRule, type CorrectionRule, type NamePair } from './corrections';
+import { upsertRule, removeRule, mergeCorrections, type CorrectionRule, type NamePair } from './corrections';
 
 /**
  * correctionsStore.ts — penyimpanan aturan "belajar dari koreksi".
@@ -60,4 +60,20 @@ export async function clearCorrections(): Promise<void> {
   } catch (e) {
     console.warn('Gagal mengosongkan koreksi:', e);
   }
+}
+
+/** Gabungkan koreksi dari backup (non-destruktif: aturan lokal menang). Mengembalikan jumlah yang ditambahkan. */
+export async function mergeInCorrections(incoming: CorrectionRule[]): Promise<number> {
+  const local = await loadCorrections();
+  const merged = mergeCorrections(local, incoming);
+  const added = merged.length - local.length;
+  if (added > 0) {
+    cache = merged;
+    try {
+      await SecureStore.set({ key: KEY, value: JSON.stringify(merged) });
+    } catch (e) {
+      console.warn('Gagal menyimpan koreksi hasil merge backup:', e);
+    }
+  }
+  return added;
 }

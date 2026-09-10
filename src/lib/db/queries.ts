@@ -1,3 +1,4 @@
+import type { BackupHistoryRow, LocalHistoryRow } from '../backupData';
 import { getDb, runWriteWithRecovery } from './db';
 import type { TrackInfo } from '../lastfm';
 import {
@@ -289,4 +290,49 @@ export async function getTicketCollection(): Promise<{
     tickets: sortTicketsForDisplay(computeEarnedTickets(rows)),
     progress: computeTicketProgress(rows),
   };
+}
+
+
+/** Ambil SELURUH riwayat untuk backup (termasuk note & favorite). */
+export async function getAllHistoryForBackup(): Promise<LocalHistoryRow[]> {
+  const db = await getDb();
+  const res = await db.query(
+    `SELECT id, artist, track, album, album_artist as albumArtist, duration as durationSec,
+            timestamp, loved, source_package as sourcePackage, note
+     FROM scrobble_history ORDER BY timestamp DESC;`
+  );
+  return ((res.values as any[]) ?? []).map((r) => ({
+    id: r.id,
+    artist: r.artist,
+    track: r.track,
+    album: r.album ?? null,
+    albumArtist: r.albumArtist ?? null,
+    durationSec: r.durationSec ?? null,
+    sourcePackage: r.sourcePackage ?? null,
+    timestamp: r.timestamp,
+    note: r.note ?? null,
+    favorite: !!r.loved,
+  }));
+}
+
+/** Sisipkan baris hasil restore backup (termasuk note & loved). Atomik + recovery, seperti addHistoryBatch. */
+export async function insertBackupRows(rows: BackupHistoryRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const db = await getDb();
+  const set = rows.map((r) => ({
+    statement: `INSERT INTO scrobble_history (artist, track, album, album_artist, duration, timestamp, source_package, note, loved)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    values: [
+      r.artist,
+      r.track,
+      r.album ?? null,
+      r.albumArtist ?? null,
+      r.durationSec ?? null,
+      r.timestamp,
+      r.sourcePackage ?? null,
+      r.note ?? null,
+      r.favorite ? 1 : 0,
+    ],
+  }));
+  await runWriteWithRecovery(() => db.executeSet(set, true), 'insertBackupRows');
 }

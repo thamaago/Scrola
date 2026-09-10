@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -99,3 +102,18 @@ jobs:
           name: scrola-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # Publikasikan APK ke Release "latest" -> tautan unduh LANGSUNG yang stabil:
+      #   https://github.com/<owner>/Scrola/releases/latest
+      # Jadi cukup upload/commit -> tunggu CI hijau -> unduh APK dari halaman Releases.
+      - name: Publikasikan APK ke Release "latest"
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          gh release delete latest -y --cleanup-tag 2>/dev/null || true
+          gh release create latest "$APK" \
+            --title "Scrola APK (debug) — build terbaru" \
+            --notes "Build otomatis dari commit ${{ github.sha }}. Pasang di Android (izinkan sumber tak dikenal)." \
+            --prerelease

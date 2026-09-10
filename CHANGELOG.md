@@ -17,6 +17,19 @@ tooling).
 
 ## [Unreleased]
 
+### Fixed — CI hijau + tipe bersih (kini "upload ke GitHub = APK jadi otomatis")
+- Perbaiki 29 tes yang gagal (scrobbleBatching/mergeCorrections/formatDurationHuman) + 16 error tipe
+  (trofi kind + earnedTrack, getAllHistoryForBackup/insertBackupRows, mergeInCorrections,
+  getSavedLocale/setSavedLocale, tsconfig ES2022.Intl). Sekarang: tsc 0 error, 352/352 tes lolos,
+  vite build sukses.
+
+### Added — kemudahan build APK lewat GitHub
+- `build.yml`: tambah `permissions: contents: write` + langkah publikasi APK ke **Release "latest"**
+  -> tautan unduh LANGSUNG stabil (`/releases/latest`), tak perlu menggali Artifacts. Build tetap
+  otomatis di setiap push ke `main`.
+- `docs/PANDUAN_BUAT_APK.md`: tegaskan build otomatis saat upload + cara unduh termudah via Releases.
+
+
 ### Added — album art (disc besar) di pemutar antrean, on-demand & hemat
 - Pemutar antrean kini menampilkan **sampul lagu** yang sedang diputar sebagai **disc vinyl 240px**
   (lebih besar dari disc 190px pemutar lama), berputar saat playing, dengan placeholder ♪ bila tak

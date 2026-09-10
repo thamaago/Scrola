@@ -13,7 +13,7 @@
  * prinsip "pisahkan logika murni, uji dulu sebelum integrasi".
  */
 
-export type TicketKind = 'jejak' | 'penemuan' | 'setia' | 'beruntun';
+export type TicketKind = 'jejak' | 'penemuan' | 'setia' | 'beruntun' | 'trofi';
 
 /** Baris riwayat minimal yang dibutuhkan untuk menghitung tiket. Kompatibel dengan SisiBRow. */
 export interface TicketRow {
@@ -34,6 +34,8 @@ export interface CollectibleTicket {
   earnedAtSec: number;
   /** Subjek deskriptif untuk tiket yang terkait entitas (mis. nama artis penemuan). */
   subject?: string;
+  /** Lagu yang memicu tiket ini (display-only, untuk kartu bagikan). */
+  earnedTrack?: { artist: string; track: string } | null;
 }
 
 export interface TicketConfig {
@@ -53,6 +55,7 @@ const KIND_CODE: Record<TicketKind, string> = {
   penemuan: 'P',
   setia: 'S',
   beruntun: 'B',
+  trofi: 'T',
 };
 
 /** Default milestone. Dipisah & diekspor supaya bisa dikonfigurasi (dan diuji dengan angka kecil). */

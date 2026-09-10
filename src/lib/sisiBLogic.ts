@@ -1,3 +1,5 @@
+import { translatePlural, DEFAULT_LOCALE, type Locale } from './i18n';
+
 export interface SisiBRow {
   artist: string;
   track: string;
@@ -127,11 +129,14 @@ export function startOfIsoWeek(reference: Date = new Date()): Date {
 }
 
 /** Format detik jadi "X jam Y menit" (atau "Y menit" saja kalau < 1 jam). */
-export function formatDurationHuman(totalSec: number): string {
+export function formatDurationHuman(totalSec: number, locale: Locale = DEFAULT_LOCALE): string {
   const totalMin = Math.round(totalSec / 60);
   const hours = Math.floor(totalMin / 60);
   const minutes = totalMin % 60;
-  if (hours === 0) return `${minutes} menit`;
-  if (minutes === 0) return `${hours} jam`;
-  return `${hours} jam ${minutes} menit`;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(translatePlural(locale, 'unit.hours', hours));
+  if (minutes > 0) parts.push(translatePlural(locale, 'unit.minutes', minutes));
+  // Semua nol (durasi < 30 detik): tampilkan "0 menit" sesuai locale.
+  if (parts.length === 0) return translatePlural(locale, 'unit.minutes', minutes);
+  return parts.join(' ');
 }

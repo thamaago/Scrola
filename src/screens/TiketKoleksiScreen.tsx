@@ -19,6 +19,7 @@ const KIND_LABEL: Record<TicketKind, string> = {
   penemuan: 'Penemuan',
   setia: 'Setia',
   beruntun: 'Beruntun',
+  trofi: 'Trofi',
 };
 
 function formatEarned(sec: number): string {

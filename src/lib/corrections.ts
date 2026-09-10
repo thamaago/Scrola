@@ -82,3 +82,16 @@ export function applyCorrection(input: NamePair, rules: CorrectionRule[]): NameP
   }
   return input;
 }
+
+/**
+ * Gabungkan aturan koreksi saat restore backup: UNION, tetapi aturan LOKAL yang sudah ada TIDAK
+ * ditimpa (janji non-destruktif backup). Aturan masuk hanya ditambahkan bila kuncinya
+ * (matchKey fromArtist+fromTrack) belum ada secara lokal. Murni.
+ */
+export function mergeCorrections(
+  local: CorrectionRule[],
+  incoming: CorrectionRule[]
+): CorrectionRule[] {
+  const seen = new Set(local.map((r) => matchKey(r.fromArtist, r.fromTrack)));
+  return [...local, ...incoming.filter((r) => !seen.has(matchKey(r.fromArtist, r.fromTrack)))];
+}
