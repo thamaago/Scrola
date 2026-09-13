@@ -105,7 +105,7 @@ jobs:
           test -n "$(find android/app/build/outputs -type f -name '*.apk' -print -quit)"
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scrola-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
