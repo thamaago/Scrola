@@ -308,6 +308,19 @@ if (appGradle3.includes('jvmTarget')) {
   }
 }
 
+// Capacitor/AGP modern dapat menghasilkan compileOptions Java 21. Pastikan target Kotlin
+// mengikuti target Java tersebut; Kotlin 17 + javac 21 menyebabkan compileDebugKotlin gagal
+// dengan "Inconsistent JVM-target compatibility".
+let appGradleAligned = fs.readFileSync(appGradlePath, 'utf8');
+appGradleAligned = appGradleAligned
+  .replace(/jvmTarget\s*=\s*['"]17['"]/g, "jvmTarget = '21'")
+  .replace(/sourceCompatibility\s+JavaVersion\.VERSION_17/g, 'sourceCompatibility JavaVersion.VERSION_21')
+  .replace(/targetCompatibility\s+JavaVersion\.VERSION_17/g, 'targetCompatibility JavaVersion.VERSION_21');
+if (appGradleAligned !== fs.readFileSync(appGradlePath, 'utf8')) {
+  fs.writeFileSync(appGradlePath, appGradleAligned, 'utf8');
+  console.log('  Target Java/Kotlin diselaraskan ke JVM 21.');
+}
+
 console.log('\n[apply-native-overlay] Selesai. Langkah berikutnya:');
 console.log('  1. npx cap sync android');
 console.log('  2. ./gradlew assembleDebug (atau biarkan CI yang membangun)');
