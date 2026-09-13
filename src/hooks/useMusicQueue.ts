@@ -89,6 +89,7 @@ export function useMusicQueue() {
 
   const itemIndex = currentItemIndex(state);
   const currentTrack: LibraryTrack | null = itemIndex >= 0 ? tracks[itemIndex] ?? null : null;
+  const items = state.playOrder.map((i) => tracks[i]).filter((t): t is LibraryTrack => !!t);
 
   // Ambil album art lagu saat ini (on-demand). Reset saat berganti; batal bila unmount/ganti cepat.
   const [currentArt, setCurrentArt] = useState<string | null>(null);
@@ -115,6 +116,7 @@ export function useMusicQueue() {
     shuffle: state.shuffle,
     position: state.position,
     total: state.playOrder.length,
+    items,
     playList,
     nextTrack,
     prevTrack,

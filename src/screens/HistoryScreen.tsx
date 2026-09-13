@@ -37,6 +37,9 @@ export default function HistoryScreen({
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
   const [mode, setMode] = useState<'menu' | 'edit' | 'delete'>('menu');
   const [noteTarget, setNoteTarget] = useState<HistoryEntry | null>(null);
+  const [viewMode, setViewMode] = useState<'story' | 'archive'>('story');
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [editFields, setEditFields] = useState({ artist: '', track: '', album: '' });
 
   function openSheet(entry: HistoryEntry) {
@@ -49,7 +52,23 @@ export default function HistoryScreen({
   }
   // Pengelompokan dilakukan lewat fungsi murni yang bisa diunit-test (lihat historyGrouping.ts),
   // bukan di dalam komponen — supaya logic tanggal (hari ini/kemarin) terverifikasi terpisah.
-  const groups = useMemo(() => groupHistoryByDay(items), [items]);
+  const filteredItems = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase('id-ID');
+    const nowMs = Date.now();
+    const start = range === 'today'
+      ? new Date(new Date().setHours(0, 0, 0, 0)).getTime()
+      : range === 'week'
+        ? nowMs - 7 * 24 * 60 * 60 * 1000
+        : range === 'month'
+          ? nowMs - 30 * 24 * 60 * 60 * 1000
+          : 0;
+    return items.filter((item) => {
+      const matchesSearch = !needle || [item.track, item.artist, item.album ?? '', item.note ?? '']
+        .some((value) => value.toLocaleLowerCase('id-ID').includes(needle));
+      return matchesSearch && item.timestamp * 1000 >= start;
+    });
+  }, [items, range, search]);
+  const groups = useMemo(() => groupHistoryByDay(filteredItems), [filteredItems]);
 
   const now = new Date();
   const babLabel = `Bab ${ROMAN[now.getMonth()]} · ${BULAN[now.getMonth()]}`;
@@ -57,7 +76,7 @@ export default function HistoryScreen({
   return (
     <div className="min-h-screen px-4 pt-8 pb-24">
       <div className="flex justify-between items-center mx-2 mb-[18px]">
-        <h1 className="font-display text-2xl font-semibold text-paper">Riwayat</h1>
+        <h1 className="font-display text-2xl font-semibold text-paper">Cerita</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={onOpenTickets}
@@ -81,11 +100,50 @@ export default function HistoryScreen({
         </div>
       </div>
 
-      {items.length === 0 ? (
+      <div className="mx-2 mb-5 flex rounded-lg bg-surface p-1" role="tablist" aria-label="Tampilan cerita">
+        <button
+          role="tab"
+          aria-selected={viewMode === 'story'}
+          onClick={() => setViewMode('story')}
+          className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${viewMode === 'story' ? 'bg-amber text-ink' : 'text-muted'}`}
+        >
+          Cerita
+        </button>
+        <button
+          role="tab"
+          aria-selected={viewMode === 'archive'}
+          onClick={() => setViewMode('archive')}
+          className={`flex-1 rounded-md py-2 text-xs font-medium transition-colors ${viewMode === 'archive' ? 'bg-amber text-ink' : 'text-muted'}`}
+        >
+          Arsip
+        </button>
+      </div>
+
+      <div className="mx-2 mb-5 space-y-2">
+        <label className="relative block">
+          <span className="sr-only">Cari cerita</span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Cari lagu, artis, album, atau catatan"
+            className="w-full rounded-lg border border-white/10 bg-surface px-3.5 py-3 pr-9 text-sm text-paper placeholder:text-muted/70 focus:border-amber/50 focus:outline-none"
+          />
+          {search && <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted" aria-label="Hapus pencarian">×</button>}
+        </label>
+        <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Filter waktu">
+          {([['all', 'Semua'], ['today', 'Hari ini'], ['week', '7 hari'], ['month', '30 hari']] as const).map(([value, label]) => (
+            <button key={value} onClick={() => setRange(value)} className={`shrink-0 rounded-full border px-3 py-1.5 text-xs ${range === value ? 'border-amber bg-amber/15 text-amber' : 'border-white/10 text-muted'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center px-4 pt-24">
-          <p className="font-display text-2xl text-paper mb-2">Buku ceritamu masih kosong</p>
+          <p className="font-display text-2xl text-paper mb-2">{items.length === 0 ? 'Buku ceritamu masih kosong' : 'Cerita tidak ditemukan'}</p>
           <p className="text-muted text-sm max-w-xs">
-            Setiap lagu yang selesai kamu dengarkan akan muncul di sini sebagai tiket.
+            {items.length === 0 ? 'Setiap lagu yang selesai kamu dengarkan akan muncul di sini sebagai tiket.' : 'Coba kata kunci atau rentang waktu yang berbeda.'}
           </p>
         </div>
       ) : (
@@ -114,16 +172,31 @@ export default function HistoryScreen({
                       openSheet(item);
                     }}
                   >
-                    <StoryTicket
-                      artist={item.artist}
-                      title={item.track}
-                      album={item.album}
-                      timestamp={new Date(item.timestamp * 1000)}
-                      loved={item.loved}
-                      variant={isFresh ? 'fresh' : 'settled'}
-                      animateIn={isFresh}
-                      onToggleLoved={() => onToggleLoved(item)}
-                    />
+                    {viewMode === 'story' ? (
+                      <StoryTicket
+                        artist={item.artist}
+                        title={item.track}
+                        album={item.album}
+                        timestamp={new Date(item.timestamp * 1000)}
+                        loved={item.loved}
+                        variant={isFresh ? 'fresh' : 'settled'}
+                        animateIn={isFresh}
+                        onToggleLoved={() => onToggleLoved(item)}
+                      />
+                    ) : (
+                      <div className={`flex items-center gap-3 rounded-lg border px-3 py-3 ${isFresh ? 'border-amber/60 bg-amber/10' : 'border-white/5 bg-surface'}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-paper">{item.track}</p>
+                          <p className="truncate text-xs text-muted">{item.artist}{item.album ? ` · ${item.album}` : ''}</p>
+                        </div>
+                        <time className="shrink-0 font-mono text-[10px] text-muted" dateTime={new Date(item.timestamp * 1000).toISOString()}>
+                          {new Date(item.timestamp * 1000).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                        </time>
+                        <button onClick={() => onToggleLoved(item)} className={`shrink-0 text-lg ${item.loved ? 'text-coral' : 'text-muted'}`} aria-label={item.loved ? 'Batalkan suka' : 'Sukai lagu'}>
+                          {item.loved ? '♥' : '♡'}
+                        </button>
+                      </div>
+                    )}
                     {/* Catatan ditampilkan MENEMPEL di bawah tiket, bukan di dalamnya — seperti
                         coretan tangan di balik tiket sungguhan. Sengaja dibedakan gayanya
                         (miring, garis amber di kiri) supaya jelas ini suara pengguna, bukan

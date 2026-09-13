@@ -13,11 +13,13 @@ import { useMusicQueue } from './hooks/useMusicQueue';
 import { App as CapApp } from '@capacitor/app';
 import { useScrobbleHistory } from './hooks/useScrobbleHistory';
 import { flushQueue } from './lib/scrobbleEngine';
+import MiniPlayer from './components/MiniPlayer';
+import QueueSheet from './components/QueueSheet';
 
 const TABS = [
   ['now', 'Sekarang'],
-  ['history', 'Riwayat'],
-  ['settings', 'Atur'],
+  ['history', 'Cerita'],
+  ['settings', 'Profil'],
 ] as const;
 
 type Tab = (typeof TABS)[number][0];
@@ -30,6 +32,7 @@ export default function App() {
   const [ticketsOpen, setTicketsOpen] = useState(false);
   const [babAlbumOpen, setBabAlbumOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
   const queue = useMusicQueue();
   // id entri riwayat yang BARU tercatat — untuk border amber + animasi masuk di HistoryScreen.
   const [freshScrobbleId, setFreshScrobbleId] = useState<number | null>(null);
@@ -194,6 +197,9 @@ export default function App() {
 
       {/* Overlay Koleksi Tiket */}
       <TiketKoleksiScreen open={ticketsOpen} onClose={() => setTicketsOpen(false)} />
+
+      <MiniPlayer queue={queue} onOpen={() => setTab('now')} onOpenQueue={() => setQueueOpen(true)} />
+      {queueOpen && <QueueSheet queue={queue} onClose={() => setQueueOpen(false)} />}
 
       <nav className="fixed bottom-0 inset-x-0 bg-surface border-t border-white/5 flex z-10">
         {TABS.map(([t, label]) => (

@@ -157,7 +157,10 @@ export default function SettingsScreen({
 
   return (
     <div className="min-h-screen px-5 pt-8 pb-24">
-      <h1 className="font-display text-2xl font-semibold text-paper mb-6">Pengaturan</h1>
+      <h1 className="font-display text-2xl font-semibold text-paper mb-6">Profil</h1>
+      <p className="text-muted text-sm leading-relaxed mb-6">
+        Kelola akun Last.fm, sumber musik, dan cara Scrola mencatat ceritamu.
+      </p>
 
       {/* ===== Backstage Pass — kartu akun bergaya tiket ===== */}
       <div
@@ -194,10 +197,10 @@ export default function SettingsScreen({
         </div>
       </div>
 
-      {/* ===== Deteksi Musik ===== */}
+      {/* ===== Bantuan Scrobble ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-          Deteksi Musik
+          Bantuan Scrobble
         </p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4">
           <div className="flex items-center justify-between gap-3">
@@ -285,10 +288,10 @@ export default function SettingsScreen({
         </div>
       </section>
 
-      {/* ===== Diagnosis Deteksi Musik ===== */}
+      {/* ===== Status Scrobble ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
-          Diagnosis Deteksi Musik
+          Status Scrobble
         </p>
         <div className="bg-surface rounded-[10px] py-3.5 px-4">
           {listenerDiag === null ? (
@@ -397,7 +400,7 @@ export default function SettingsScreen({
         </div>
       </section>
 
-      {/* ===== Antrean Scrobble — panel diagnosis ===== */}
+      {/* ===== Antrean Scrobble ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
           Antrean Scrobble
@@ -446,7 +449,12 @@ export default function SettingsScreen({
         </div>
       </section>
 
-      {/* ===== Log Peristiwa (diagnosis mendalam) ===== */}
+      <div className="mt-8 mb-3 border-t border-white/10 pt-6">
+        <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase">Mode Lanjutan</p>
+        <p className="text-muted text-xs mt-1">Alat diagnosis dan koreksi untuk saat Scrola perlu diperiksa lebih dalam.</p>
+      </div>
+
+      {/* ===== Log Peristiwa (mode lanjutan) ===== */}
       <section className="mb-6">
         <p className="font-mono text-[10px] tracking-[0.1em] text-muted uppercase mb-2">
           Log Peristiwa Scrobble
