@@ -140,6 +140,7 @@ export default function NowPlayingScreen({
     const repeatLabel = queue.repeat === 'one' ? '1' : queue.repeat === 'all' ? '∞' : '→';
     return (
       <div className="min-h-full flex flex-col px-7 pt-6 pb-24">
+        {queue.error && <p role="alert" className="text-coral text-sm mb-3">{queue.error}</p>}
         <p className="font-mono text-[10px] tracking-[0.3em] text-amber uppercase text-center">
           Memutar · {queue.position + 1}/{queue.total}
         </p>

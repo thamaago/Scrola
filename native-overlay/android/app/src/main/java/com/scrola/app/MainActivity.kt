@@ -23,5 +23,23 @@ class MainActivity : BridgeActivity() {
         registerPlugin(DiagnosticsPlugin::class.java)
         registerPlugin(SharePlugin::class.java)
         super.onCreate(savedInstanceState)
+        // Fit the entire WebView viewport, including CSS fixed controls, inside system UI.
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        val content = findViewById<android.view.View>(android.R.id.content)
+        content.setBackgroundColor(android.graphics.Color.rgb(18, 26, 21))
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
+            val safe = insets.getInsets(
+                androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout() or
+                    androidx.core.view.WindowInsetsCompat.Type.ime()
+            )
+            view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            androidx.core.view.WindowInsetsCompat.CONSUMED
+        }
+        androidx.core.view.WindowCompat.getInsetsController(window, content).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        androidx.core.view.ViewCompat.requestApplyInsets(content)
     }
 }

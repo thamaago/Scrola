@@ -248,9 +248,27 @@ class PlayerPlugin : Plugin() {
                 )
             }
         }
+        if (items.isEmpty() || items.any { it.uri.isBlank() }) {
+            call.reject("Antrean kosong atau alamat file tidak valid")
+            return
+        }
         mainHandler.post {
-            PlaybackService.instance?.playQueue(items, startIndex)
-            call.resolve()
+            try {
+                ensureServiceStarted()
+                waitForServiceAndRun(
+                    onReady = { service ->
+                        try {
+                            service.playQueue(items, startIndex)
+                            call.resolve()
+                        } catch (e: Exception) {
+                            call.reject("Gagal memutar antrean: ${e.message}", e)
+                        }
+                    },
+                    onTimeout = { call.reject("Player tidak siap tepat waktu, coba lagi") }
+                )
+            } catch (e: Exception) {
+                call.reject("Gagal memulai player: ${e.message}", e)
+            }
         }
     }
 

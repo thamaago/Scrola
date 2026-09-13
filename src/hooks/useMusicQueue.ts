@@ -20,6 +20,7 @@ import {
  */
 export function useMusicQueue() {
   const [tracks, setTracks] = useState<LibraryTrack[]>([]); // urutan ASLI (sejajar QueueState.items)
+  const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<QueueState>(() => createQueue([]));
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -54,7 +55,12 @@ export function useMusicQueue() {
     tracksRef.current = list;
     setState(q);
     stateRef.current = q;
-    await playQueueTracks(orderedTracks(q, list), q.position).catch(() => {});
+    setError(null);
+    try {
+      await playQueueTracks(orderedTracks(q, list), q.position);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Gagal memulai pemutaran. Coba pilih lagu kembali.');
+    }
   }, []);
 
   const nextTrack = useCallback(() => {
@@ -109,6 +115,7 @@ export function useMusicQueue() {
   }, [currentTrack?.id]);
 
   return {
+    error,
     currentTrack,
     currentArt,
     isActive: tracks.length > 0 && state.position >= 0,

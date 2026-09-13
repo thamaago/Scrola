@@ -25,11 +25,6 @@ import {
   type HistoryRow,
 } from './db/queries';
 
-// Setelah gagal sebanyak ini, berhenti mencoba ulang — track kemungkinan besar memang
-// ditolak Last.fm secara permanen (nama tidak valid, dll), bukan gangguan jaringan sementara.
-// Tanpa batas ini, satu baris "beracun" bisa terus menempati slot batch selamanya.
-const MAX_ATTEMPTS = 8;
-
 // Mutex sederhana: mencegah dua flushQueue() berjalan bersamaan (mis. dipanggil dari
 // App.tsx saat mount DAN dari enqueueScrobble di saat yang hampir sama). Tanpa ini,
 // dua panggilan bisa mengambil baris antrean yang sama, mengirim dua kali ke Last.fm,
@@ -78,27 +73,10 @@ async function flushQueueOnce(sourcePackage?: string) {
   // dan memanggil flushQueueOnce secara rekursif per-batch berisiko menumpuk call stack dalam.
   // Loop menjaga penggunaan stack tetap datar berapa pun panjang antrean.
   while (true) {
-    const fullBatch = await getQueueBatch(50);
-    if (fullBatch.length === 0) return;
-
-    // Pisahkan baris yang sudah melewati batas percobaan — jangan ikut dikirim lagi,
-    // buang saja supaya tidak menyumbat slot batch untuk baris lain yang masih punya harapan.
-    const exhausted = fullBatch.filter((row) => row.attempts >= MAX_ATTEMPTS);
-    if (exhausted.length > 0) {
-      console.warn(
-        `Membuang ${exhausted.length} scrobble dari antrean setelah ${MAX_ATTEMPTS}x gagal:`,
-        exhausted.map((r) => `${r.artist} - ${r.track}`)
-      );
-      await removeFromQueue(exhausted.map((r) => r.id));
-    }
-    const batch = fullBatch.filter((row) => row.attempts < MAX_ATTEMPTS);
-    if (batch.length === 0) {
-      // Semua yang tersisa di batch ini exhausted & sudah dibuang. Cek apakah masih ada baris
-      // lain di antrean (yang belum exhausted) sebelum menyimpulkan antrean kosong.
-      const stillRemaining = await getQueueBatch(1);
-      if (stillRemaining.length === 0) return;
-      continue;
-    }
+    const batch = await getQueueBatch(50);
+    if (batch.length === 0) return;
+    // Jumlah percobaan hanya untuk diagnosis. Gangguan jaringan atau sesi dapat berlangsung
+    // lama; attempts tinggi bukan bukti penolakan permanen dan tidak boleh menghapus lagu.
 
     try {
       diag(`scrobbleBatch KIRIM: ${batch.length} track ke Last.fm`);
