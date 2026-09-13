@@ -94,7 +94,15 @@ jobs:
 
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -150
+        # Jangan pipe ke `tail`: tanpa pipefail, kegagalan Gradle tertutup dan job
+        # baru gagal belakangan saat upload karena file APK tidak ditemukan.
+        run: ./gradlew assembleDebug --stacktrace --info
+
+      - name: Verifikasi hasil APK
+        run: |
+          set -euxo pipefail
+          find android/app/build/outputs -type f -name '*.apk' -print
+          test -n "$(find android/app/build/outputs -type f -name '*.apk' -print -quit)"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
